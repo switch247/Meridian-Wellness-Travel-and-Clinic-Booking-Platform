@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"database/sql"
 	"encoding/csv"
 	"errors"
 	"fmt"
@@ -16,7 +17,13 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-var ErrNotFound = errors.New("not found")
+var (
+	ErrNotFound               = errors.New("not found")
+	ErrHoldExpired            = errors.New("hold expired")
+	ErrAddressRequired        = errors.New("address required")
+	ErrPostalBlocked          = errors.New("address not serviceable")
+	ErrServiceWindowViolation = errors.New("service not available at requested time window")
+)
 
 type Repository struct {
 	pool *pgxpool.Pool
@@ -228,6 +235,179 @@ func (r *Repository) ListContactsByUser(ctx context.Context, userID int64) ([]ma
 		})
 	}
 	return items, rows.Err()
+}
+
+func (r *Repository) GetPrimaryPostalCodeForUser(ctx context.Context, userID int64) (string, error) {
+	var postal string
+	err := r.pool.QueryRow(ctx, `SELECT postal_code FROM addresses WHERE user_id=$1 ORDER BY created_at DESC LIMIT 1`, userID).Scan(&postal)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", ErrAddressRequired
+		}
+		return "", err
+	}
+	return postal, nil
+}
+
+func (r *Repository) EnforceServiceRules(ctx context.Context, userID int64, slotStart time.Time) error {
+	postal, err := r.GetPrimaryPostalCodeForUser(ctx, userID)
+	if err != nil {
+		return err
+	}
+
+	var blocked bool
+	var start sql.NullTime
+	var end sql.NullTime
+	err = r.pool.QueryRow(ctx, `
+		SELECT sr.blocked, sr.start_time, sr.end_time
+		FROM blocked_postal_codes b
+		JOIN service_rules sr ON sr.id = b.service_rule_id
+		WHERE b.postal_code=$1
+		ORDER BY sr.updated_at DESC
+		LIMIT 1
+	`, postal).Scan(&blocked, &start, &end)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		return err
+	}
+	if blocked {
+		return ErrPostalBlocked
+	}
+	if !start.Valid || !end.Valid {
+		return nil
+	}
+	if !timeWindowAllows(slotStart, start.Time, end.Time) {
+		return ErrServiceWindowViolation
+	}
+	return nil
+}
+
+func timeWindowAllows(slot, start, end time.Time) bool {
+	slotUTC := slot.UTC()
+	startUTC := start.UTC()
+	endUTC := end.UTC()
+	slotTOD := time.Date(0, time.January, 1, slotUTC.Hour(), slotUTC.Minute(), slotUTC.Second(), slotUTC.Nanosecond(), time.UTC)
+	startTOD := time.Date(0, time.January, 1, startUTC.Hour(), startUTC.Minute(), startUTC.Second(), startUTC.Nanosecond(), time.UTC)
+	endTOD := time.Date(0, time.January, 1, endUTC.Hour(), endUTC.Minute(), endUTC.Second(), endUTC.Nanosecond(), time.UTC)
+	if startTOD.Before(endTOD) || startTOD.Equal(endTOD) {
+		return (slotTOD.Equal(startTOD) || slotTOD.After(startTOD)) && slotTOD.Before(endTOD)
+	}
+	return slotTOD.Equal(startTOD) || slotTOD.After(startTOD) || slotTOD.Before(endTOD)
+}
+
+func (r *Repository) ListRegions(ctx context.Context) ([]map[string]any, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT id,name,parent_region_id,description,active,created_at
+		FROM regions ORDER BY name
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []map[string]any{}
+	for rows.Next() {
+		var id int64
+		var name, description string
+		var active bool
+		var createdAt time.Time
+		var parent sql.NullInt64
+		if err := rows.Scan(&id, &name, &parent, &description, &active, &createdAt); err != nil {
+			return nil, err
+		}
+		var parentID *int64
+		if parent.Valid {
+			temp := parent.Int64
+			parentID = &temp
+		}
+		out = append(out, map[string]any{
+			"id":          id,
+			"name":        name,
+			"parentId":    parentID,
+			"description": description,
+			"active":      active,
+			"createdAt":   createdAt,
+		})
+	}
+	return out, rows.Err()
+}
+
+func (r *Repository) CreateRegion(ctx context.Context, name, description string, parentID *int64) (int64, error) {
+	var id int64
+	err := r.pool.QueryRow(ctx, `
+		INSERT INTO regions(name,description,parent_region_id)
+		VALUES($1,$2,$3)
+		RETURNING id
+	`, name, description, parentID).Scan(&id)
+	return id, err
+}
+
+func (r *Repository) UpsertServiceRule(ctx context.Context, regionID int64, allowPickup, allowMail, blocked bool, start, end *time.Time) (int64, error) {
+	var id int64
+	err := r.pool.QueryRow(ctx, `
+		INSERT INTO service_rules(region_id,allow_home_pickup,allow_mail_documents,blocked,start_time,end_time,created_at,updated_at)
+		VALUES($1,$2,$3,$4,$5,$6,NOW(),NOW())
+		ON CONFLICT(region_id) DO UPDATE
+		SET allow_home_pickup=EXCLUDED.allow_home_pickup,
+			allow_mail_documents=EXCLUDED.allow_mail_documents,
+			blocked=EXCLUDED.blocked,
+			start_time=EXCLUDED.start_time,
+			end_time=EXCLUDED.end_time,
+			updated_at=NOW()
+		RETURNING id
+	`, regionID, allowPickup, allowMail, blocked, start, end).Scan(&id)
+	return id, err
+}
+
+func (r *Repository) ListBlockedPostalCodes(ctx context.Context) ([]map[string]any, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT b.id,b.postal_code,sr.id,sr.region_id,r.name
+		FROM blocked_postal_codes b
+		JOIN service_rules sr ON sr.id = b.service_rule_id
+		JOIN regions r ON r.id = sr.region_id
+		ORDER BY b.postal_code
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []map[string]any{}
+	for rows.Next() {
+		var id, ruleID, regionID int64
+		var postal, regionName string
+		if err := rows.Scan(&id, &postal, &ruleID, &regionID, &regionName); err != nil {
+			return nil, err
+		}
+		items = append(items, map[string]any{
+			"id":            id,
+			"postalCode":    postal,
+			"serviceRuleId": ruleID,
+			"regionId":      regionID,
+			"regionName":    regionName,
+		})
+	}
+	return items, rows.Err()
+}
+
+func (r *Repository) AddBlockedPostalCode(ctx context.Context, serviceRuleID int64, postalCode string) (int64, error) {
+	var id int64
+	err := r.pool.QueryRow(ctx, `
+		INSERT INTO blocked_postal_codes(service_rule_id,postal_code,created_at)
+		VALUES($1,$2,NOW())
+		ON CONFLICT(service_rule_id,postal_code) DO NOTHING
+		RETURNING id
+	`, serviceRuleID, postalCode).Scan(&id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			err = r.pool.QueryRow(ctx, `
+				SELECT id FROM blocked_postal_codes WHERE service_rule_id=$1 AND postal_code=$2
+			`, serviceRuleID, postalCode).Scan(&id)
+		} else {
+			return 0, err
+		}
+	}
+	return id, err
 }
 
 func (r *Repository) DeleteContact(ctx context.Context, userID, contactID int64) error {
@@ -795,11 +975,12 @@ func (r *Repository) ConfirmHold(ctx context.Context, userID, holdID int64, expe
 	var slotStart time.Time
 	var duration, version int
 	var status string
+	var expiresAt time.Time
 	var ownerID int64
 	err = tx.QueryRow(ctx, `
-		SELECT package_id, host_id, room_id, slot_start, duration_minutes, version, status, user_id
+		SELECT package_id, host_id, room_id, slot_start, duration_minutes, version, status, expires_at, user_id
 		FROM reservation_holds WHERE id=$1
-	`, holdID).Scan(&packageID, &hostID, &roomID, &slotStart, &duration, &version, &status, &ownerID)
+	`, holdID).Scan(&packageID, &hostID, &roomID, &slotStart, &duration, &version, &status, &expiresAt, &ownerID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return 0, ErrNotFound
@@ -814,6 +995,9 @@ func (r *Repository) ConfirmHold(ctx context.Context, userID, holdID int64, expe
 	}
 	if expectedVersion > 0 && version != expectedVersion {
 		return 0, fmt.Errorf("version conflict")
+	}
+	if expiresAt.Before(time.Now().UTC()) {
+		return 0, ErrHoldExpired
 	}
 	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, hostID+1_000_000_000); err != nil {
 		return 0, err

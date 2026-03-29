@@ -81,6 +81,11 @@ func NewRouter(cfg config.Config, logger *slog.Logger, authH *handlers.AuthHandl
 	admin.GET("/users", domainH.ListUsers, middleware.RequirePermission(middleware.PermAdminUsersRead))
 	admin.GET("/roles/audits", domainH.ListRoleAudits, middleware.RequirePermission(middleware.PermAdminAuditsRead))
 	admin.POST("/reports/:id/resolve", domainH.ResolveReport, middleware.RequirePermission(middleware.PermAdminAuditsRead))
+	admin.GET("/regions", domainH.ListRegions, middleware.RequirePermission(middleware.PermAdminRegions))
+	admin.POST("/regions", domainH.CreateRegion, middleware.RequirePermission(middleware.PermAdminRegions))
+	admin.POST("/regions/:id/service-rule", domainH.UpsertServiceRule, middleware.RequirePermission(middleware.PermAdminRegions))
+	admin.GET("/service/blocked-postal-codes", domainH.ListBlockedPostalCodes, middleware.RequirePermission(middleware.PermAdminRegions))
+	admin.POST("/service/blocked-postal-codes", domainH.AddBlockedPostalCode, middleware.RequirePermission(middleware.PermAdminRegions))
 
 	community := authed.Group("/community")
 	community.GET("/posts", domainH.ListPosts, middleware.RequirePermission(middleware.PermCommunityRead))

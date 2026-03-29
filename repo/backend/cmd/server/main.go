@@ -23,6 +23,9 @@ import (
 
 func main() {
 	cfg := config.Load()
+	if err := cfg.ValidateSecurityKeys(); err != nil {
+		log.Fatalf("%v", err)
+	}
 	var logOut io.Writer = os.Stdout
 	var rotator *logger.RotatingWriter
 	if cfg.LogFilePath != "" {

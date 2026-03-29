@@ -7,6 +7,10 @@
   - cert: `/certs/server.crt`
   - key: `/certs/server.key`
 
+## Secret Key Requirements
+- `JWT_SECRET` and `ENCRYPTION_KEY` must be provided through environment variables; the backend refuses to start without them.
+- Choose a high-entropy `JWT_SECRET` (32+ characters) and a 32-byte `ENCRYPTION_KEY` (hex/base64) that is rotated via your deployment pipeline.
+
 ## IP Allowlist
 - Global allowlist is enforced for all routes except `/health`.
 - Configure via `ALLOWED_IPS` (comma-separated IP or CIDR values).

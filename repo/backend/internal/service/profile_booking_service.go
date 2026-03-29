@@ -119,6 +119,9 @@ func (s *BookingService) PlaceHold(ctx context.Context, userID, packageID, hostI
 	if duration != 30 && duration != 45 && duration != 60 {
 		return nil, fmt.Errorf("duration must be one of 30,45,60")
 	}
+	if err := s.repo.EnforceServiceRules(ctx, userID, slotStart); err != nil {
+		return nil, err
+	}
 	if err := s.repo.ReleaseExpiredHolds(ctx); err != nil {
 		return nil, err
 	}

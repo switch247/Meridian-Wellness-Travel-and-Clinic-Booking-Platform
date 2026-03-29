@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"net"
 	"os"
 	"strconv"
@@ -35,8 +36,8 @@ func Load() Config {
 	return Config{
 		Port:                 getEnv("PORT", "8443"),
 		DatabaseURL:          getEnv("DATABASE_URL", "postgres://postgres:postgres@db:5432/meridian?sslmode=disable"),
-		JWTSecret:            getEnv("JWT_SECRET", "local-dev-jwt-secret-change-me"),
-		EncryptionKey:        getEnv("ENCRYPTION_KEY", "0123456789abcdef0123456789abcdef"),
+		JWTSecret:            strings.TrimSpace(os.Getenv("JWT_SECRET")),
+		EncryptionKey:        strings.TrimSpace(os.Getenv("ENCRYPTION_KEY")),
 		LockoutThreshold:     getEnvInt("LOCKOUT_THRESHOLD", 5),
 		LockoutDuration:      getEnvDuration("LOCKOUT_DURATION", 15*time.Minute),
 		TokenTTL:             getEnvDuration("TOKEN_TTL", 8*time.Hour),
@@ -129,4 +130,11 @@ func ParseCIDRorIP(v string) (*net.IPNet, error) {
 		return nil, err
 	}
 	return n, nil
+}
+
+func (c Config) ValidateSecurityKeys() error {
+	if c.JWTSecret == "" || c.EncryptionKey == "" {
+		return fmt.Errorf("security keys must be provided via environment variables")
+	}
+	return nil
 }

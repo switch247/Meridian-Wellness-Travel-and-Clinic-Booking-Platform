@@ -173,7 +173,16 @@ func (h *DomainHandler) PlaceHold(c echo.Context) error {
 	}
 	out, err := h.booking.PlaceHold(c.Request().Context(), uid, req.PackageID, req.HostID, req.RoomID, t, req.Duration)
 	if err != nil {
-		return response.JSONError(c, http.StatusConflict, err.Error())
+		switch {
+		case errors.Is(err, repository.ErrAddressRequired):
+			return response.JSONError(c, http.StatusBadRequest, "add a profile address before booking")
+		case errors.Is(err, repository.ErrPostalBlocked):
+			return response.JSONError(c, http.StatusForbidden, err.Error())
+		case errors.Is(err, repository.ErrServiceWindowViolation):
+			return response.JSONError(c, http.StatusConflict, err.Error())
+		default:
+			return response.JSONError(c, http.StatusConflict, err.Error())
+		}
 	}
 	return c.JSON(http.StatusCreated, out)
 }
@@ -205,6 +214,25 @@ func (h *DomainHandler) ListBookingHistory(c echo.Context) error {
 type roleRequest struct {
 	TargetUserID int64  `json:"targetUserId"`
 	Role         string `json:"role"`
+}
+
+type regionRequest struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	ParentID    *int64 `json:"parentId"`
+}
+
+type serviceRuleRequest struct {
+	AllowHomePickup bool   `json:"allowHomePickup"`
+	AllowMailDocs   bool   `json:"allowMailDocuments"`
+	Blocked         bool   `json:"blocked"`
+	StartTime       string `json:"startTime"`
+	EndTime         string `json:"endTime"`
+}
+
+type blockedPostalRequest struct {
+	ServiceRuleID int64  `json:"serviceRuleId"`
+	PostalCode    string `json:"postalCode"`
 }
 
 func (h *DomainHandler) AssignRole(c echo.Context) error {
@@ -242,6 +270,78 @@ func (h *DomainHandler) ListRoleAudits(c echo.Context) error {
 		return response.JSONError(c, http.StatusInternalServerError, err.Error())
 	}
 	return c.JSON(http.StatusOK, map[string]any{"items": items})
+}
+
+func (h *DomainHandler) ListRegions(c echo.Context) error {
+	items, err := h.repo.ListRegions(c.Request().Context())
+	if err != nil {
+		return response.JSONError(c, http.StatusInternalServerError, err.Error())
+	}
+	return c.JSON(http.StatusOK, map[string]any{"items": items})
+}
+
+func (h *DomainHandler) CreateRegion(c echo.Context) error {
+	var req regionRequest
+	if err := c.Bind(&req); err != nil || req.Name == "" {
+		return response.JSONError(c, http.StatusBadRequest, "name required")
+	}
+	id, err := h.repo.CreateRegion(c.Request().Context(), req.Name, req.Description, req.ParentID)
+	if err != nil {
+		return response.JSONError(c, http.StatusInternalServerError, err.Error())
+	}
+	return c.JSON(http.StatusCreated, map[string]any{"id": id})
+}
+
+func (h *DomainHandler) UpsertServiceRule(c echo.Context) error {
+	regionID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || regionID <= 0 {
+		return response.JSONError(c, http.StatusBadRequest, "invalid region id")
+	}
+	var req serviceRuleRequest
+	if err := c.Bind(&req); err != nil {
+		return response.JSONError(c, http.StatusBadRequest, "invalid payload")
+	}
+	var startTime, endTime *time.Time
+	if req.StartTime != "" {
+		parsed, err := time.Parse("15:04", req.StartTime)
+		if err != nil {
+			return response.JSONError(c, http.StatusBadRequest, "startTime must be HH:MM")
+		}
+		startTime = &parsed
+	}
+	if req.EndTime != "" {
+		parsed, err := time.Parse("15:04", req.EndTime)
+		if err != nil {
+			return response.JSONError(c, http.StatusBadRequest, "endTime must be HH:MM")
+		}
+		endTime = &parsed
+	}
+	id, err := h.repo.UpsertServiceRule(c.Request().Context(), regionID, req.AllowHomePickup, req.AllowMailDocs, req.Blocked, startTime, endTime)
+	if err != nil {
+		return response.JSONError(c, http.StatusInternalServerError, err.Error())
+	}
+	return c.JSON(http.StatusOK, map[string]any{"serviceRuleId": id})
+
+}
+
+func (h *DomainHandler) ListBlockedPostalCodes(c echo.Context) error {
+	items, err := h.repo.ListBlockedPostalCodes(c.Request().Context())
+	if err != nil {
+		return response.JSONError(c, http.StatusInternalServerError, err.Error())
+	}
+	return c.JSON(http.StatusOK, map[string]any{"items": items})
+}
+
+func (h *DomainHandler) AddBlockedPostalCode(c echo.Context) error {
+	var req blockedPostalRequest
+	if err := c.Bind(&req); err != nil || req.ServiceRuleID <= 0 || req.PostalCode == "" {
+		return response.JSONError(c, http.StatusBadRequest, "serviceRuleId and postalCode required")
+	}
+	id, err := h.repo.AddBlockedPostalCode(c.Request().Context(), req.ServiceRuleID, req.PostalCode)
+	if err != nil {
+		return response.JSONError(c, http.StatusInternalServerError, err.Error())
+	}
+	return c.JSON(http.StatusCreated, map[string]any{"id": id})
 }
 
 func (h *DomainHandler) HostAgenda(c echo.Context) error {
@@ -403,6 +503,9 @@ func (h *DomainHandler) ConfirmHold(c echo.Context) error {
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
 			return response.JSONError(c, http.StatusNotFound, "hold not found")
+		}
+		if errors.Is(err, repository.ErrHoldExpired) {
+			return response.JSONError(c, http.StatusConflict, "hold expired")
 		}
 		return response.JSONError(c, http.StatusConflict, err.Error())
 	}

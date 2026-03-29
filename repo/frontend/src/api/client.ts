@@ -77,12 +77,13 @@ export const api = {
   markNotificationRead: (token: string, id: number) => request(`/notifications/${id}/read`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } }),
   analyticsKpis: (token: string, q: { from: string; to: string; providerId?: number; packageId?: number }) =>
     request<{ kpis: Record<string, unknown> }>(`/ops/analytics/kpis?from=${q.from}&to=${q.to}${q.providerId ? `&providerId=${q.providerId}` : ''}${q.packageId ? `&packageId=${q.packageId}` : ''}`, { headers: { Authorization: `Bearer ${token}` } }),
-  exportAnalytics: (token: string, q: { from: string; to: string }) =>
-    request<{ path: string }>(`/ops/analytics/export?from=${q.from}&to=${q.to}`, { headers: { Authorization: `Bearer ${token}` } }),
+  exportAnalytics: (token: string, q: { from: string; to: string; providerId?: number; packageId?: number }) =>
+    request<{ path: string }>(`/ops/analytics/export?from=${q.from}&to=${q.to}${q.providerId ? `&providerId=${q.providerId}` : ''}${q.packageId ? `&packageId=${q.packageId}` : ''}`, { headers: { Authorization: `Bearer ${token}` } }),
   scheduleReport: (token: string, payload: { reportType: string; parameters: Record<string, unknown>; scheduledFor: string }) =>
     request('/ops/reports/schedule', { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(payload) }),
   queueEmail: (token: string, payload: { templateKey: string; recipientLabel: string; subject: string; body: string }) =>
     request('/ops/email/queue', { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(payload) }),
   emailQueue: (token: string) => request<{ items: Array<Record<string, unknown>> }>('/ops/email/queue', { headers: { Authorization: `Bearer ${token}` } }),
-  exportEmailQueue: (token: string) => request<{ path: string }>('/ops/email/export', { method: 'POST', headers: { Authorization: `Bearer ${token}` } })
+  exportEmailQueue: (token: string) => request<{ path: string }>('/ops/email/export', { method: 'POST', headers: { Authorization: `Bearer ${token}` } }),
+  reportJobs: (token: string) => request<{ items: Array<Record<string, unknown>> }>('/ops/reports', { headers: { Authorization: `Bearer ${token}` } })
 };

@@ -17,8 +17,6 @@ services:
     environment:
       PORT: 8443
       DATABASE_URL: postgres://postgres:postgres@db:5432/meridian?sslmode=disable
-      JWT_SECRET: local-dev-jwt-secret-change-me
-      ENCRYPTION_KEY: 0123456789abcdef0123456789abcdef
       LOCKOUT_THRESHOLD: 5
       LOCKOUT_DURATION: 15m
       TOKEN_TTL: 8h

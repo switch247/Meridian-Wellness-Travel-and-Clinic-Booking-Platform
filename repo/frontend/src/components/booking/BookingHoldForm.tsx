@@ -1,4 +1,4 @@
-import { Alert, Button, MenuItem, Paper, Stack, TextField } from '@mui/material';
+import { Alert, Button, Chip, MenuItem, Paper, Stack, TextField, Typography } from '@mui/material';
 import { useMemo, useState } from 'react';
 
 export type BookingPayload = {
@@ -71,17 +71,29 @@ export function BookingHoldForm({
         >
           Load Available Slots
         </Button>
-        {slots.length > 0 && (
-          <TextField
-            select
-            label="Available Slot"
-            value={new Date(payload.slotStart).toISOString()}
-            onChange={(e) => setPayload((p) => ({ ...p, slotStart: new Date(e.target.value).toISOString().slice(0, 16) }))}
-          >
-            {slots.map((s) => (
-              <MenuItem key={s.slotStart} value={s.slotStart}>{new Date(s.slotStart).toLocaleString()}</MenuItem>
-            ))}
-          </TextField>
+        {slots.length > 0 ? (
+          <Stack spacing={1}>
+            <Typography variant="body2" color="text.secondary">Next available windows</Typography>
+            <Stack direction="row" spacing={1} flexWrap="wrap">
+              {slots.map((s) => {
+                const slotDate = new Date(s.slotStart);
+                return (
+                  <Chip
+                    key={s.slotStart}
+                    label={slotDate.toLocaleString()}
+                    color={slotDate.toISOString().slice(0, 10) === payload.slotStart.slice(0, 10) ? 'primary' : 'default'}
+                    clickable
+                    onClick={() => setPayload((p) => ({
+                      ...p,
+                      slotStart: slotDate.toISOString().slice(0, 16)
+                    }))}
+                  />
+                );
+              })}
+            </Stack>
+          </Stack>
+        ) : (
+          <Typography variant="caption" color="text.secondary">Use \"Load Available Slots\" to see capacity.</Typography>
         )}
         <TextField
           select

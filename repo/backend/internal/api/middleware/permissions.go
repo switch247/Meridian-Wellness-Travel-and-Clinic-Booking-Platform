@@ -39,6 +39,7 @@ const (
 	PermOpsAnalyticsExport     = "analytics.export"
 	PermOpsReportsSchedule     = "analytics.schedule"
 	PermOpsEmailQueue          = "email.queue"
+	PermAdminRegions           = "admin.regions"
 )
 
 var PermissionRoles = map[string][]string{
@@ -71,6 +72,7 @@ var PermissionRoles = map[string][]string{
 	PermOpsAnalyticsExport:     {"operations", "admin"},
 	PermOpsReportsSchedule:     {"operations", "admin"},
 	PermOpsEmailQueue:          {"operations", "admin"},
+	PermAdminRegions:           {"operations", "admin"},
 }
 
 func RequirePermission(permission string) echo.MiddlewareFunc {

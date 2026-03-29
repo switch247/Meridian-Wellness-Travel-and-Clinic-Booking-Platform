@@ -1,4 +1,16 @@
-import { Alert, Card, CardContent, CardMedia, CircularProgress, Grid2 as Grid, Stack, Typography } from '@mui/material';
+import {
+  Alert,
+  Box,
+  Card,
+  CardContent,
+  CardMedia,
+  Chip,
+  CircularProgress,
+  Grid2 as Grid,
+  Paper,
+  Stack,
+  Typography
+} from '@mui/material';
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api/client';
 import { CatalogTable } from '../components/catalog/CatalogTable';
@@ -39,31 +51,70 @@ export function CatalogPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  const subtitle = useMemo(() => `${rows.length} published package calendar rows loaded`, [rows.length]);
+  const subtitle = useMemo(() => `${rows.length} published package calendars ready for booking`, [rows.length]);
 
   return (
     <Stack spacing={2.5}>
       <SectionHeader title="Travel Catalog" subtitle={subtitle} />
-      {loading ? <CircularProgress /> : <CatalogTable rows={rows} />}
+
+      <Paper sx={{ p: 2.5, backgroundImage: 'linear-gradient(135deg, #0d6e6e 0%, #2a9d8f 100%)', color: 'white' }}>
+        <Typography variant="h6" gutterBottom>Inventory Snapshot</Typography>
+        <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
+          <Chip label={`${rows.length} date slots`} color="warning" sx={{ color: 'white' }} />
+          <Chip label={`${routes.length} guided routes`} color="success" sx={{ color: 'white' }} />
+          <Chip label={`${hotels.length} partner hotels`} color="secondary" sx={{ color: 'white' }} />
+          <Chip label={`${attractions.length} attractions`} color="info" sx={{ color: 'white' }} />
+        </Stack>
+      </Paper>
+
+      <Paper sx={{ p: 2.5 }}>
+        <Typography variant="h6" gutterBottom>Published Packages</Typography>
+        {loading ? (
+          <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+            <CircularProgress />
+          </Box>
+        ) : rows.length === 0 ? (
+          <Alert severity="info">No catalog rows are published yet.</Alert>
+        ) : (
+          <CatalogTable rows={rows} />
+        )}
+      </Paper>
+
       <Grid container spacing={2}>
-        {[{ title: 'Routes', items: routes }, { title: 'Partner Hotels', items: hotels }, { title: 'Attractions', items: attractions }].map((section) => (
+        {[
+          { title: 'Routes', items: routes, accent: 'primary.main' },
+          { title: 'Partner Hotels', items: hotels, accent: 'secondary.main' },
+          { title: 'Attractions', items: attractions, accent: '#f97316' }
+        ].map((section) => (
           <Grid key={section.title} size={{ xs: 12, md: 4 }}>
-            <Typography variant="h6" sx={{ mb: 1 }}>{section.title}</Typography>
-            {section.items.length === 0 ? (
-              <Alert severity="info">No published {section.title.toLowerCase()}.</Alert>
-            ) : (
-              <Stack spacing={1.2}>
-                {section.items.map((it, idx) => (
-                  <Card key={idx} variant="outlined">
-                    <CardMedia component="img" height="120" image={String((it.imagePaths as string[] | undefined)?.[0] || '/placeholder.jpg')} />
-                    <CardContent>
-                      <Typography variant="subtitle1">{String(it.name || '-')}</Typography>
-                      <Typography variant="body2" color="text.secondary">{String(it.richDescription || '')}</Typography>
-                    </CardContent>
-                  </Card>
-                ))}
-              </Stack>
-            )}
+            <Paper sx={{ p: 2.5, minHeight: '100%' }}>
+              <Typography variant="h6" sx={{ mb: 1 }}>{section.title}</Typography>
+              {section.items.length === 0 ? (
+                <Alert severity="info">No published {section.title.toLowerCase()}.</Alert>
+              ) : (
+                <Stack spacing={2}>
+                  {section.items.map((it, idx) => (
+                    <Card key={idx} variant="outlined" sx={{ borderColor: section.accent }}>
+                      <CardMedia
+                        component="img"
+                        height="130"
+                        image={String((it.imagePaths as string[] | undefined)?.[0] || '/placeholder.jpg')}
+                        alt={String(it.name || '')}
+                      />
+                      <CardContent>
+                        <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>{String(it.name || '-')}</Typography>
+                        <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                          Destination ID #{String(it.destinationId ?? '-')}.
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                          {String(it.richDescription || '')}
+                        </Typography>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </Stack>
+              )}
+            </Paper>
           </Grid>
         ))}
       </Grid>
