@@ -1,0 +1,17 @@
+:root {
+  font-family: "Plus Jakarta Sans", "Segoe UI", sans-serif;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background:
+    radial-gradient(circle at 10% 20%, rgba(42, 157, 143, 0.15), transparent 35%),
+    radial-gradient(circle at 80% 0%, rgba(217, 119, 6, 0.12), transparent 40%),
+    #eef4f7;
+}

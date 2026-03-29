@@ -1,0 +1,52 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: meridian
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      PORT: 8443
+      DATABASE_URL: postgres://postgres:postgres@db:5432/meridian?sslmode=disable
+      JWT_SECRET: local-dev-jwt-secret-change-me
+      ENCRYPTION_KEY: 0123456789abcdef0123456789abcdef
+      LOCKOUT_THRESHOLD: 5
+      LOCKOUT_DURATION: 15m
+      TOKEN_TTL: 8h
+      RESERVATION_HOLD: 10m
+      SLOT_GRANULARITY_MINUTES: 15
+      REPORT_WORKER_INTERVAL: 1s
+      TLS_ENABLED: "true"
+      TLS_CERT_FILE: /certs/server.crt
+      TLS_KEY_FILE: /certs/server.key
+      ALLOWED_IPS: 127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+      TRUST_PROXY_HEADERS: "false"
+      CORS_ALLOWED_ORIGINS: https://localhost:5173,http://localhost:5173
+    ports:
+      - "8443:8443"
+    volumes:
+      - ./backend/certs:/certs:ro
+    depends_on:
+      - db
+
+  frontend:
+    build:
+      context: ./frontend
+    environment:
+      VITE_API_BASE: https://localhost:8443/api/v1
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:

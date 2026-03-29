@@ -1,0 +1,44 @@
+# Node/React
+node_modules/
+build/
+dist/
+.env
+.env.local
+.env.development
+.env.production
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+yarn.lock
+
+# Go
+bin/
+*.exe
+*.test
+*.out
+*.log
+*.tmp
+*.swp
+vendor/
+coverage.out
+
+# Editor/IDE
+.vscode/
+.idea/
+*.sublime-workspace
+*.sublime-project
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Meta files/folders
+.meta/
+*.meta
+.tmp/
+# Misc
+*.bak
+*.old
+*.orig
+*.rej
