@@ -51,15 +51,17 @@ Note: backend uses self-signed certs in `backend/certs` for local development. T
 
 ## Dev seeded accounts
 
-For local development and testing the project includes a set of recommended dev accounts (the project seed now creates these). Use the same password for all seeded users in local/dev: **Password123!**
+For local development and testing the project includes a set of recommended dev accounts (the project seed now creates these). All seeded users use the same development password: **Password123!**
 
-- **admin** / **Password123!** (super-admin)
-- **admin@example.com** / **Password123!** (super-admin alias)
-- **operations@example.com** / **Password123!** (operations)
-- **coach@example.com** / **Password123!** (coach)
-- **clinician@example.com** / **Password123!** (clinician)
-- **traveler1@example.com** / **Password123!** (traveler)
-- **traveler2@example.com** / **Password123!** (traveler)
+Common users (quick reference):
+
+- **admin** — Password: **Password123!** (super-admin)
+- **admin@example.com** — Password: **Password123!** (super-admin alias)
+- **operations@example.com** — Password: **Password123!** (operations)
+- **coach@example.com** — Password: **Password123!** (coach)
+- **clinician@example.com** — Password: **Password123!** (clinician)
+- **traveler1@example.com** — Password: **Password123!** (traveler)
+- **traveler2@example.com** — Password: **Password123!** (traveler)
 
 These accounts are for local testing only. Do NOT use these credentials in production and remove or change them before any public deployment.
 
@@ -70,6 +72,20 @@ These accounts are for local testing only. Do NOT use these credentials in produ
 - AES-256 encryption for sensitive data and rotating logs with redaction
 - Audit logging for role assignment changes
 - See [`docs/security.md`](docs/security.md) for deployment and key-generation steps
+
+### Sample Postal Coverage & Env Example
+
+For local testing of address coverage and normalization, you can provide a sample CSV in the `ALLOWED_POSTAL_CODES` environment (or use `ALLOWED_IPS` style variables). Example `.env` snippet:
+
+```
+JWT_SECRET=your-jwt-secret
+ENCRYPTION_KEY=0123456789abcdef0123456789abcdef
+ALLOWED_POSTAL_CODES=10001,10002,60601,90001
+CORS_ALLOWED_ORIGINS=https://localhost:5173
+TLS_ENABLED=true
+```
+
+The backend `config` loads `AllowedPostalCode` from a compile-time default; supplying `ALLOWED_POSTAL_CODES` lets you test coverage warnings for out-of-service postal codes.
 
 ## Test Execution
 All tests must be run through Docker. Local test runs are not supported.

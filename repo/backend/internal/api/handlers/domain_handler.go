@@ -970,8 +970,10 @@ func (h *DomainHandler) enrichSessionNotes(items []map[string]any) {
 			continue
 		}
 		if decoded, err := h.encryptor.Decrypt(raw); err == nil {
-			item["sessionNotes"] = decoded
+			// Do NOT return full decrypted session notes in API responses.
+			// Provide only a short summary and a presence flag to avoid leaking sensitive data.
 			item["sessionNotesSummary"] = summarizeText(decoded)
+			item["hasSessionNotes"] = true
 		}
 		delete(item, "sessionNotesEncrypted")
 	}

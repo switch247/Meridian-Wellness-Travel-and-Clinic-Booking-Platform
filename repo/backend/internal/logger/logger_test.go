@@ -1,5 +1,19 @@
 package logger
 
+import "testing"
+
+func TestRedactSensitive(t *testing.T) {
+    v := "1234567890"
+    got := RedactSensitive(v)
+    if len(got) != len(v) {
+        t.Fatalf("expected same length mask, got %s", got)
+    }
+    if got[len(got)-4:] != "7890" {
+        t.Fatalf("expected last 4 chars preserved, got %s", got)
+    }
+}
+package logger
+
 import (
 	"bytes"
 	"os"

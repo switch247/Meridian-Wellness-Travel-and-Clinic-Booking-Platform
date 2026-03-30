@@ -24,6 +24,8 @@ func NewWithWriter(w io.Writer) *Logger {
 				return slog.String(a.Key, "REDACTED")
 			case "phone", "address":
 				return slog.String(a.Key, RedactSensitive(a.Value.String()))
+			case "sessionNotes", "session_notes", "session_notes_encrypted", "sessionNotesEncrypted":
+				return slog.String(a.Key, "[REDACTED]")
 			default:
 				return a
 			}
