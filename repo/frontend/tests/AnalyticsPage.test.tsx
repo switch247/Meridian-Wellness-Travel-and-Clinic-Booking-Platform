@@ -10,7 +10,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('../src/context/AuthContext', () => ({
-  useAuth: () => ({ token: 't' })
+  useAuth: () => ({ token: 't', me: { roles: ['admin'] } })
 }));
 
 vi.mock('../src/api/client', () => ({
