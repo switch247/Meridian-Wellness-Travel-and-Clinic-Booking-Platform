@@ -136,5 +136,12 @@ func (c Config) ValidateSecurityKeys() error {
 	if c.JWTSecret == "" || c.EncryptionKey == "" {
 		return fmt.Errorf("security keys must be provided via environment variables")
 	}
+	// reject obvious development defaults
+	if c.JWTSecret == "default-jwt-secret" {
+		return fmt.Errorf("jwt secret is set to default insecure value; set JWT_SECRET in environment")
+	}
+	if len(c.EncryptionKey) < 32 {
+		return fmt.Errorf("encryption key too short; ENCRYPTION_KEY must be at least 32 characters")
+	}
 	return nil
 }

@@ -350,6 +350,30 @@ func (r *Repository) ListRegions(ctx context.Context) ([]map[string]any, error) 
 	return out, rows.Err()
 }
 
+func (r *Repository) ListRooms(ctx context.Context) ([]map[string]any, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT id,name,chairs_count,active,created_at
+		FROM rooms WHERE active=TRUE ORDER BY name
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []map[string]any{}
+	for rows.Next() {
+		var id int64
+		var name string
+		var chairs int
+		var active bool
+		var createdAt time.Time
+		if err := rows.Scan(&id, &name, &chairs, &active, &createdAt); err != nil {
+			return nil, err
+		}
+		out = append(out, map[string]any{"id": id, "name": name, "chairsCount": chairs, "active": active, "createdAt": createdAt})
+	}
+	return out, rows.Err()
+}
+
 func (r *Repository) CreateRegion(ctx context.Context, name, description string, parentID *int64) (int64, error) {
 	var id int64
 	err := r.pool.QueryRow(ctx, `
@@ -1056,7 +1080,9 @@ func (r *Repository) ConfirmHold(ctx context.Context, userID, holdID int64, expe
 	if expectedVersion > 0 && version != expectedVersion {
 		return 0, fmt.Errorf("version conflict")
 	}
-	if expiresAt.Before(time.Now().UTC()) {
+	// Treat holds that are at-or-before now as expired to avoid confirming
+	// holds whose expiry timestamp is <= server time. Use UTC for comparison.
+	if !expiresAt.After(time.Now().UTC()) {
 		return 0, ErrHoldExpired
 	}
 	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, hostID+1_000_000_000); err != nil {

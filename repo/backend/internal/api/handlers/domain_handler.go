@@ -271,6 +271,19 @@ func (h *DomainHandler) AssignRole(c echo.Context) error {
 }
 
 func (h *DomainHandler) ListUsers(c echo.Context) error {
+	// Enforce data-scope: only operations/admin can list users broadly.
+	requester, ok := middleware.UserID(c)
+	if !ok {
+		return response.JSONError(c, http.StatusUnauthorized, "missing user context")
+	}
+	if !middleware.HasAnyRole(c, "operations", "admin") {
+		// Non-privileged users may only view their own user record.
+		u, err := h.repo.GetUserByID(c.Request().Context(), requester)
+		if err != nil {
+			return response.JSONError(c, http.StatusNotFound, "user not found")
+		}
+		return c.JSON(http.StatusOK, map[string]any{"items": []map[string]any{{"id": u.ID, "username": u.Username}}})
+	}
 	roleFilter := c.QueryParam("role")
 	items, err := h.repo.ListUsers(c.Request().Context(), roleFilter)
 	if err != nil {
@@ -299,6 +312,14 @@ func (h *DomainHandler) ListHosts(c echo.Context) error {
 		}
 	}
 	return c.JSON(http.StatusOK, map[string]any{"items": filtered})
+}
+
+func (h *DomainHandler) ListRooms(c echo.Context) error {
+	items, err := h.repo.ListRooms(c.Request().Context())
+	if err != nil {
+		return response.JSONError(c, http.StatusInternalServerError, err.Error())
+	}
+	return c.JSON(http.StatusOK, map[string]any{"items": items})
 }
 
 func (h *DomainHandler) ListRoleAudits(c echo.Context) error {

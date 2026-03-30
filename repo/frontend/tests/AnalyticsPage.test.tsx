@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import { AnalyticsPage } from './AnalyticsPage';
+import { AnalyticsPage } from '../src/pages/AnalyticsPage';
 
 const mocks = vi.hoisted(() => ({
   scheduleReport: vi.fn().mockResolvedValue({ id: 12 }),
@@ -9,11 +9,11 @@ const mocks = vi.hoisted(() => ({
   exportAnalytics: vi.fn().mockResolvedValue({ path: '/tmp/a.csv' })
 }));
 
-vi.mock('../context/AuthContext', () => ({
+vi.mock('../src/context/AuthContext', () => ({
   useAuth: () => ({ token: 't' })
 }));
 
-vi.mock('../api/client', () => ({
+vi.mock('../src/api/client', () => ({
   api: {
     analyticsKpis: mocks.analyticsKpis,
     exportAnalytics: mocks.exportAnalytics,

@@ -56,6 +56,7 @@ export const api = {
   availableSlots: (token: string, q: { hostId: number; roomId: number; day: string; duration: number }) =>
     request<{ items: Array<Record<string, unknown>> }>(`/scheduling/slots?hostId=${q.hostId}&roomId=${q.roomId}&day=${encodeURIComponent(q.day)}&duration=${q.duration}`, { headers: { Authorization: `Bearer ${token}` } }),
   listHosts: (token: string) => request<{ items: Array<Record<string, unknown>> }>('/scheduling/hosts', { headers: { Authorization: `Bearer ${token}` } }),
+  listRooms: (token: string) => request<{ items: Array<Record<string, unknown>> }>('/scheduling/rooms', { headers: { Authorization: `Bearer ${token}` } }),
   confirmHold: (token: string, payload: { holdId: number; version?: number }) =>
     request('/bookings/confirm', { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(payload) }),
   updateBookingStatus: (token: string, bookingId: number, payload: { status: string; notes?: string }) =>

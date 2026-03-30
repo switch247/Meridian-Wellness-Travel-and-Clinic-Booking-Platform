@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { inCoverage, normalizeAddressInput } from './address';
+import { inCoverage, normalizeAddressInput } from '../src/utils/address';
 
 describe('address utils', () => {
   it('normalizes common street abbreviations', () => {

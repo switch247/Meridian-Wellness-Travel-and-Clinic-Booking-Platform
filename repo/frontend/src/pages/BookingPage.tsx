@@ -44,9 +44,15 @@ export function BookingPage() {
         setHosts(hosts);
       });
 
-      // Fetch rooms - assuming there's an API, but for now, mock
-      // TODO: Add API for rooms
-      setRooms([{ id: 1, name: 'Room A' }, { id: 2, name: 'Room B' }]);
+      // Fetch rooms
+      if (token) {
+        api.listRooms(token).then((r) => {
+          const rr = (r.items || []).map((x) => ({ id: Number(x.id || 0), name: String(x.name || 'Room') }));
+          setRooms(rr.length ? rr : [{ id: 1, name: 'Room A' }]);
+        }).catch(() => {
+          setRooms([{ id: 1, name: 'Room A' }, { id: 2, name: 'Room B' }]);
+        });
+      }
     }
 
     if (token) {

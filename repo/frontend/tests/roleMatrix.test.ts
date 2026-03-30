@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { canAccess } from './roleMatrix';
+import { canAccess } from '../src/app/roleMatrix';
 
 describe('role matrix', () => {
   it('allows matching role access', () => {
