@@ -72,23 +72,15 @@ These accounts are for local testing only. Do NOT use these credentials in produ
 - Audit logging for role assignment changes
 
 ## Test Execution
-```bash
-./run_tests.sh
-```
-Equivalent:
+All tests must be run through Docker. Local test runs are not supported.
 ```bash
 docker-compose up -d --build
 docker-compose exec backend ./run_tests.sh
 ```
 
 Frontend tests:
+All tests must be run through Docker. Local test runs are not supported.
 ```bash
-cd frontend
-npm run test
-npm run test:e2e
+docker-compose exec frontend npm run test
+docker-compose exec frontend npm run test:e2e
 ```
-
-## Additional Documentation
-- Security hardening guide: [SECURITY.md](SECURITY.md)
-- Role matrix: [docs/role-matrix.md](docs/role-matrix.md)
-- OpenAPI spec: [docs/openapi.yaml](docs/openapi.yaml)
