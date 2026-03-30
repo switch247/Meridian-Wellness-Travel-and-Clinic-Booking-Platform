@@ -20,16 +20,16 @@ if [ "$ready" -ne 1 ]; then
 	exit 1
 fi
 
-echo "Running backend unit tests..."
+echo "Running backend tests (all packages)..."
 docker-compose exec backend go test -v ./... -coverprofile=coverage.out || {
-	echo "Backend unit tests failed" >&2
-	exit 1
+    echo "Backend tests failed" >&2
+    exit 1
 }
 
-echo "Running backend integration tests..."
-docker-compose exec backend go test -v ./integration_tests || {
-	echo "Backend integration tests failed" >&2
-	exit 1
+echo "Running repository tests under ./tests/... (integration tests are skipped by default)"
+docker-compose exec backend go test -v ./tests/... || {
+    echo "Backend tests under ./tests failed" >&2
+    exit 1
 }
 
 echo "Running frontend tests..."

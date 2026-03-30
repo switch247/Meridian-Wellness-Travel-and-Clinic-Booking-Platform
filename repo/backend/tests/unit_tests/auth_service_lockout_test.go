@@ -1,4 +1,4 @@
-package service_test
+package unit_tests
 
 import (
 	"context"
@@ -34,7 +34,7 @@ func TestAuthService_LockoutAfterFailedAttempts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new encryptor: %v", err)
 	}
-	logger := slog.New(slog.NewTextHandler(os.Stdout))
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	cfg := config.Config{
 		LockoutThreshold: 3,
 		LockoutDuration:  2 * time.Minute,

@@ -1,8 +1,14 @@
 package integration_tests
 
-import "testing"
+import (
+	"os"
+	"testing"
+)
 
 func TestDocsEndpoints(t *testing.T) {
+	if os.Getenv("BASE_URL") == "" && os.Getenv("RUN_INTEGRATION_TESTS") != "true" {
+		t.Skip("integration tests skipped; set RUN_INTEGRATION_TESTS=true or BASE_URL to run")
+	}
 	res, err := testClient().Get(baseURL() + "/docs")
 	if err != nil {
 		t.Fatalf("request docs: %v", err)

@@ -33,6 +33,9 @@ func testClient() *http.Client {
 
 func call(method, path, token string, payload any, t *testing.T) (*http.Response, map[string]any) {
 	t.Helper()
+	if os.Getenv("BASE_URL") == "" && os.Getenv("RUN_INTEGRATION_TESTS") != "true" {
+		t.Skip("integration tests skipped; set RUN_INTEGRATION_TESTS=true or BASE_URL to run")
+	}
 	var bodyBytes []byte
 	if payload != nil {
 		bodyBytes, _ = json.Marshal(payload)

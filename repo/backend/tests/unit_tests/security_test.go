@@ -28,6 +28,9 @@ func testClient() *http.Client {
 
 func postJSON(t *testing.T, path string, payload any, token string) (*http.Response, map[string]any) {
 	t.Helper()
+	if os.Getenv("BASE_URL") == "" && os.Getenv("RUN_INTEGRATION_TESTS") != "true" {
+		t.Skip("integration tests skipped; set RUN_INTEGRATION_TESTS=true or BASE_URL to run")
+	}
 	b, _ := json.Marshal(payload)
 	req, err := http.NewRequest(http.MethodPost, baseURL()+path, bytes.NewReader(b))
 	if err != nil {
@@ -49,6 +52,9 @@ func postJSON(t *testing.T, path string, payload any, token string) (*http.Respo
 
 func getJSON(t *testing.T, path string, token string) (*http.Response, map[string]any) {
 	t.Helper()
+	if os.Getenv("BASE_URL") == "" && os.Getenv("RUN_INTEGRATION_TESTS") != "true" {
+		t.Skip("integration tests skipped; set RUN_INTEGRATION_TESTS=true or BASE_URL to run")
+	}
 	req, err := http.NewRequest(http.MethodGet, baseURL()+path, nil)
 	if err != nil {
 		t.Fatalf("new request: %v", err)

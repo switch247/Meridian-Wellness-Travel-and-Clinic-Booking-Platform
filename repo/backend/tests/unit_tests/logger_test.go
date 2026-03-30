@@ -1,14 +1,16 @@
-package logger
+package unit_tests
 
 import (
 	"bytes"
 	"os"
 	"path/filepath"
 	"testing"
+
+	loggerpkg "meridian/backend/internal/logger"
 )
 
 func TestRedactSensitive(t *testing.T) {
-	if got := RedactSensitive("1234567890"); got == "1234567890" {
+	if got := loggerpkg.RedactSensitive("1234567890"); got == "1234567890" {
 		t.Fatalf("expected masked value")
 	}
 }
@@ -16,7 +18,7 @@ func TestRedactSensitive(t *testing.T) {
 func TestRotatingWriter(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "app.log")
-	w, err := NewRotatingWriter(path, 64, 2)
+	w, err := loggerpkg.NewRotatingWriter(path, 64, 2)
 	if err != nil {
 		t.Fatalf("new rotating writer: %v", err)
 	}
@@ -33,7 +35,7 @@ func TestRotatingWriter(t *testing.T) {
 
 func TestLoggerRedactsAuthAttr(t *testing.T) {
 	var buf bytes.Buffer
-	l := NewWithWriter(&buf)
+	l := loggerpkg.NewWithWriter(&buf)
 	l.Info("auth", "authorization", "Bearer abc", "phone", "+15551234567")
 	out := buf.String()
 	if out == "" {
