@@ -31,8 +31,8 @@ Offline-first full-stack platform for wellness travel and clinic session operati
 - `/frontend/src/pages`: traveler/coach/ops/admin pages
 - `/tests/unit_tests` and `/tests/API_tests`: executable tests
 - `/docs/openapi.yaml`: API contract
-- `/docs/role-matrix.md`: role visibility + endpoint policy
-- `/SECURITY.md`: TLS/IP hardening and deployment notes
+  - `/docs/role-matrix.md`: role visibility + endpoint policy
+  - `/docs/security.md`: TLS/IP hardening, encryption key, and logging guidance
 - `/backend/migrations/003_domains_completion.sql`: gap-closure schema
 
 ## Startup (Docker Only)
@@ -64,12 +64,12 @@ For local development and testing the project includes a set of recommended dev 
 These accounts are for local testing only. Do NOT use these credentials in production and remove or change them before any public deployment.
 
 ## Security Implementation
-- HTTPS-only by default (`TLS_ENABLED=true`)
-- Global IP allowlist via `ALLOWED_IPS`
-- Optional proxy trust via `TRUST_PROXY_HEADERS`
-- HSTS + X-Frame-Options + X-Content-Type-Options + Referrer-Policy
-- AES-256 encryption for sensitive fields at rest
+- HTTPS-only by default (`TLS_ENABLED=true`) with cert/key fail-fast enforcement
+- Global IP allowlist via `ALLOWED_IPS` (proxy headers gated by `TRUST_PROXY_HEADERS`)
+- Explicit CORS origins plus HSTS, `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`
+- AES-256 encryption for sensitive data and rotating logs with redaction
 - Audit logging for role assignment changes
+- See [`docs/security.md`](docs/security.md) for deployment and key-generation steps
 
 ## Test Execution
 All tests must be run through Docker. Local test runs are not supported.

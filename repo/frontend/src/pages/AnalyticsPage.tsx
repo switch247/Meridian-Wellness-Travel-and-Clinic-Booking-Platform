@@ -1,9 +1,9 @@
-import { Alert, Button, Card, CardContent, Grid2 as Grid, MenuItem, Paper, Stack, TextField, Typography } from '@mui/material';
+import { Alert, Button, Card, CardContent, Chip, Grid2 as Grid, MenuItem, Paper, Stack, TextField, Typography } from '@mui/material';
 import EventAvailableRoundedIcon from '@mui/icons-material/EventAvailableRounded';
 import FavoriteRoundedIcon from '@mui/icons-material/FavoriteRounded';
 import InsightsRoundedIcon from '@mui/icons-material/InsightsRounded';
 import PaidRoundedIcon from '@mui/icons-material/PaidRounded';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { SectionHeader } from '../components/common/SectionHeader';
@@ -33,6 +33,29 @@ export function AnalyticsPage() {
     const out = await api.analyticsKpis(token, { from, to, providerId, packageId });
     setKpis(out.kpis || {});
   };
+
+  const downloadSnapshot = useCallback(() => {
+    const rows = ['metric,value'];
+    const entries = Object.entries(kpis);
+    if (entries.length === 0) {
+      rows.push('bookingVolume,0');
+    } else {
+      entries.forEach(([key, value]) => {
+        rows.push(`${key},${String(value ?? '')}`);
+      });
+    }
+    const blob = new Blob([rows.join('\n')], { type: 'text/csv' });
+    const fileName = `meridian-analytics-${from}-${to}.csv`;
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = fileName;
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    URL.revokeObjectURL(url);
+    setMsg('Snapshot CSV downloaded locally.');
+  }, [kpis, from, to]);
 
   const loadJobs = async () => {
     if (!token) return;
@@ -99,6 +122,7 @@ export function AnalyticsPage() {
             const out = await api.exportAnalytics(token, { from, to, providerId, packageId });
             setMsg(`Exported to ${out.path}`);
           }}>Export CSV</Button>
+          <Button variant="text" onClick={downloadSnapshot}>Download Snapshot CSV</Button>
         </Stack>
         {isAdmin && (
           <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} sx={{ mt: 1.5 }}>
@@ -119,7 +143,7 @@ export function AnalyticsPage() {
                 scheduledFor: new Date(scheduledFor).toISOString()
               });
               setMsg(`Scheduled job #${String((out as { id?: number }).id ?? '')}`);
-              loadJobs();
+              await loadJobs().catch(() => {});
             }}>Schedule Report</Button>
           </Stack>
         )}
@@ -142,23 +166,46 @@ export function AnalyticsPage() {
       </Grid>
       <Paper sx={{ p: 2.5 }}>
         <Typography variant="h6">Scheduled Reports</Typography>
-        {reportJobs.length === 0 ? (
-          <Alert severity="info" sx={{ mt: 1 }}>No scheduled reports yet.</Alert>
-        ) : (
-          <Stack spacing={1.3} sx={{ mt: 1 }}>
-            {reportJobs.map((job, idx) => (
+      {reportJobs.length === 0 ? (
+        <Alert severity="info" sx={{ mt: 1 }}>
+          No scheduled reports yet.
+        </Alert>
+      ) : (
+        <Stack spacing={1.3} sx={{ mt: 1 }}>
+          {reportJobs.map((job, idx) => {
+            const statusLabel = String(job.status ?? 'scheduled');
+            const statusColor =
+              statusLabel === 'completed' ? 'success' : statusLabel === 'failed' ? 'error' : 'warning';
+            const scheduledTime = new Date(String((job.scheduledFor ?? job.createdAt) ?? ''));
+            const completedTime = job.completedAt ? new Date(String(job.completedAt)) : null;
+            return (
               <Card key={idx} variant="outlined">
                 <CardContent>
-                  <Typography variant="subtitle2">Job #{String(job.id)}</Typography>
+                  <Stack direction="row" spacing={1} alignItems="center">
+                    <Typography variant="subtitle2">Job #{String(job.id)}</Typography>
+                    <Chip label={statusLabel} size="small" color={statusColor as any} />
+                  </Stack>
                   <Typography variant="body2" color="text.secondary">
-                    Type: {String(job.reportType)} · Status: {String(job.status)} · Scheduled: {new Date(String((job.scheduledFor ?? job.createdAt) || '')).toLocaleString()}
+                    Type: {String(job.reportType || 'kpi')} � Scheduled: {scheduledTime.toLocaleString()}
                   </Typography>
+                  {completedTime && (
+                    <Typography variant="caption" color="text.secondary">
+                      Completed: {completedTime.toLocaleString()}
+                    </Typography>
+                  )}
+                  {job.outputPath && (
+                    <Typography variant="caption" color="text.secondary" display="block">
+                      Output file: {String(job.outputPath)}
+                    </Typography>
+                  )}
                 </CardContent>
               </Card>
-            ))}
-          </Stack>
-        )}
+            );
+          })}
+        </Stack>
+      )}
       </Paper>
+
     </Stack>
   );
 }

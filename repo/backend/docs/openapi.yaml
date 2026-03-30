@@ -91,6 +91,34 @@ paths:
     post:
       security: [{ bearerAuth: [] }]
       responses: { '200': { description: Hold confirmed into booking }, '409': { description: Version or state conflict } }
+  /bookings/{id}/status:
+    post:
+      summary: Update booking status and optional clinical notes
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                  description: Allowed values include scheduled, confirmed, checked_in, in_progress, completed, cancelled.
+                notes:
+                  type: string
+                  description: Clinical or session notes saved encrypted at rest.
+              required: [status]
+      responses:
+        '200': { description: Booking status updated }
+        '400': { description: Invalid status or payload }
+        '403': { description: Permission or ownership denied }
+        '404': { description: Booking not found }
   /scheduling/slots:
     get:
       security: [{ bearerAuth: [] }]

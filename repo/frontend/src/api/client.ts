@@ -58,6 +58,8 @@ export const api = {
   listHosts: (token: string) => request<{ items: Array<Record<string, unknown>> }>('/scheduling/hosts', { headers: { Authorization: `Bearer ${token}` } }),
   confirmHold: (token: string, payload: { holdId: number; version?: number }) =>
     request('/bookings/confirm', { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(payload) }),
+  updateBookingStatus: (token: string, bookingId: number, payload: { status: string; notes?: string }) =>
+    request(`/bookings/${bookingId}/status`, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(payload) }),
   communityPosts: (token: string) => request<{ items: Array<Record<string, unknown>> }>('/community/posts', { headers: { Authorization: `Bearer ${token}` } }),
   createCommunityPost: (token: string, payload: { title: string; body: string; destinationId?: number }) =>
     request('/community/posts', { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(payload) }),

@@ -68,6 +68,7 @@ func NewRouter(cfg config.Config, logger *slog.Logger, authH *handlers.AuthHandl
 	authed.GET("/bookings/holds", domainH.ListHolds, middleware.RequirePermission(middleware.PermTravelerBookingList))
 	authed.GET("/bookings/history", domainH.ListBookingHistory, middleware.RequirePermission(middleware.PermTravelerBookingHist))
 	authed.POST("/bookings/confirm", domainH.ConfirmHold, middleware.RequirePermission(middleware.PermTravelerBookingConfirm))
+	authed.POST("/bookings/:id/status", domainH.UpdateBookingStatus, middleware.RequirePermission(middleware.PermBookingStatusUpdate))
 	authed.GET("/scheduling/slots", domainH.AvailableSlots, middleware.RequirePermission(middleware.PermSchedulingSlotsRead))
 	authed.GET("/scheduling/hosts", domainH.ListHosts, middleware.RequirePermission(middleware.PermSchedulingHostsRead))
 

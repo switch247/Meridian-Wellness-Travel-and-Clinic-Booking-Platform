@@ -1,5 +1,5 @@
-import { Alert, Button, Chip, Paper, Stack, Typography } from '@mui/material';
-import { useEffect, useState } from 'react';
+import { Alert, Button, Chip, CircularProgress, Paper, Stack, Typography } from '@mui/material';
+import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { SectionHeader } from '../components/common/SectionHeader';
@@ -7,6 +7,7 @@ import { SectionHeader } from '../components/common/SectionHeader';
 export function NotificationsPage() {
   const { token } = useAuth();
   const [items, setItems] = useState<Array<Record<string, unknown>>>([]);
+  const [markLoading, setMarkLoading] = useState<Record<number, boolean>>({});
 
   const load = async () => {
     if (!token) return;
@@ -35,11 +36,15 @@ export function NotificationsPage() {
           <Button variant="outlined" onClick={() => load().catch(() => {})}>Refresh List</Button>
         </Stack>
         {items.length === 0 ? (
-          <Alert severity="info" sx={{ mt: 1.5 }}>No notifications yet.</Alert>
+          <Alert severity="info" sx={{ mt: 1.5 }}>
+            No notifications yet.
+          </Alert>
         ) : (
           <Stack spacing={1.5} sx={{ mt: 1.5 }}>
             {items.map((notification, idx) => {
               const read = Boolean(notification.readAt);
+              const id = Number(notification.id ?? 0);
+              const isLoading = markLoading[id];
               return (
                 <Paper
                   key={idx}
@@ -50,26 +55,39 @@ export function NotificationsPage() {
                     boxShadow: read ? 'none' : '0 0 16px rgba(13, 110, 110, 0.08)'
                   }}
                 >
-                  <Stack direction="row" justifyContent="space-between" alignItems="center">
-                    <Stack>
+                  <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={2}>
+                    <Stack spacing={0.5}>
                       <Typography variant="subtitle1">{String(notification.title)}</Typography>
-                      <Typography variant="body2" color="text.secondary">{String(notification.body)}</Typography>
-                      <Chip label={String(notification.category || 'general')} size="small" sx={{ mt: 1 }} />
+                      <Typography variant="body2" color="text.secondary">
+                        {String(notification.body)}
+                      </Typography>
+                      <Stack direction="row" spacing={1} alignItems="center">
+                        <Chip label={String(notification.category || 'general')} size="small" />
+                        {read && notification.readAt && (
+                          <Typography variant="caption" color="text.secondary">
+                            Read {new Date(String(notification.readAt)).toLocaleString()}
+                          </Typography>
+                        )}
+                      </Stack>
                     </Stack>
-                    {!read && (
-                      <Button
-                        variant="contained"
-                        onClick={async () => {
-                          if (!token) return;
-                          const id = Number(notification.id ?? 0);
-                          if (!id) return;
+                    <Button
+                      size="small"
+                      variant={read ? 'outlined' : 'contained'}
+                      disabled={read || !id || isLoading}
+                      onClick={async () => {
+                        if (!token || read || !id) return;
+                        setMarkLoading((prev) => ({ ...prev, [id]: true }));
+                        try {
                           await api.markNotificationRead(token, id);
                           await load();
-                        }}
-                      >
-                        Mark read
-                      </Button>
-                    )}
+                        } finally {
+                          setMarkLoading((prev) => ({ ...prev, [id]: false }));
+                        }
+                      }}
+                      startIcon={isLoading ? <CircularProgress size={14} /> : undefined}
+                    >
+                      {read ? 'Read' : 'Mark as read'}
+                    </Button>
                   </Stack>
                 </Paper>
               );

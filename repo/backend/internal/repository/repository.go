@@ -4,12 +4,15 @@ import (
 	"context"
 	"database/sql"
 	"encoding/csv"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"meridian/backend/internal/domain"
 
@@ -23,6 +26,15 @@ var (
 	ErrAddressRequired        = errors.New("address required")
 	ErrPostalBlocked          = errors.New("address not serviceable")
 	ErrServiceWindowViolation = errors.New("service not available at requested time window")
+	ErrInvalidBookingStatus   = errors.New("invalid booking status")
+	validBookingStatuses      = map[string]struct{}{
+		"scheduled":   {},
+		"confirmed":   {},
+		"checked_in":  {},
+		"in_progress": {},
+		"completed":   {},
+		"cancelled":   {},
+	}
 )
 
 type Repository struct {
@@ -31,6 +43,11 @@ type Repository struct {
 
 func New(pool *pgxpool.Pool) *Repository {
 	return &Repository{pool: pool}
+}
+
+func isBookingStatusValid(status string) bool {
+	_, ok := validBookingStatuses[status]
+	return ok
 }
 
 func (r *Repository) CreateUser(ctx context.Context, username, passwordHash, encryptedPhone, encryptedAddress string) (int64, error) {
@@ -645,6 +662,23 @@ func (r *Repository) ListBookingHistoryByUser(ctx context.Context, userID int64)
 	return items, rows.Err()
 }
 
+func (r *Repository) GetBookingHost(ctx context.Context, bookingID int64) (int64, error) {
+	var hostID int64
+	err := r.pool.QueryRow(ctx, `
+		SELECT h.host_id
+		FROM reservation_holds h
+		JOIN bookings b ON b.hold_id=h.id
+		WHERE b.id=$1
+	`, bookingID).Scan(&hostID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return 0, ErrNotFound
+		}
+		return 0, err
+	}
+	return hostID, nil
+}
+
 func (r *Repository) ListUsers(ctx context.Context, roleFilter string) ([]map[string]any, error) {
 	query := `SELECT id, username, created_at FROM users`
 	args := []any{}
@@ -712,8 +746,13 @@ func (r *Repository) ListPermissionAudits(ctx context.Context) ([]map[string]any
 
 func (r *Repository) ListHostAgenda(ctx context.Context, hostID int64) ([]map[string]any, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT id, user_id, package_id, room_id, slot_start, duration_minutes, status
-		FROM reservation_holds WHERE host_id=$1 ORDER BY slot_start DESC LIMIT 200
+		SELECT h.id, h.user_id, h.package_id, h.room_id, h.slot_start, h.duration_minutes, h.status,
+		       b.id, b.session_notes_encrypted
+		FROM reservation_holds h
+		LEFT JOIN bookings b ON b.hold_id=h.id
+		WHERE h.host_id=$1 AND h.status<>'active'
+		ORDER BY h.slot_start DESC
+		LIMIT 200
 	`, hostID)
 	if err != nil {
 		return nil, err
@@ -721,30 +760,43 @@ func (r *Repository) ListHostAgenda(ctx context.Context, hostID int64) ([]map[st
 	defer rows.Close()
 	items := []map[string]any{}
 	for rows.Next() {
-		var id, userID, packageID, roomID int64
+		var id, userID, packageID, roomID, bookingID sql.NullInt64
 		var slotStart time.Time
 		var duration int
 		var status string
-		if err := rows.Scan(&id, &userID, &packageID, &roomID, &slotStart, &duration, &status); err != nil {
+		var rawNotes sql.NullString
+		if err := rows.Scan(&id, &userID, &packageID, &roomID, &slotStart, &duration, &status, &bookingID, &rawNotes); err != nil {
 			return nil, err
 		}
-		items = append(items, map[string]any{
-			"id":              id,
-			"travelerId":      userID,
-			"packageId":       packageID,
-			"roomId":          roomID,
+		item := map[string]any{
+			"id":              id.Int64,
+			"travelerId":      userID.Int64,
+			"packageId":       packageID.Int64,
+			"roomId":          roomID.Int64,
 			"slotStart":       slotStart,
 			"durationMinutes": duration,
 			"status":          status,
-		})
+		}
+		if bookingID.Valid {
+			item["bookingId"] = bookingID.Int64
+		}
+		if rawNotes.Valid {
+			item["sessionNotesEncrypted"] = rawNotes.String
+		}
+		items = append(items, item)
 	}
 	return items, rows.Err()
 }
 
 func (r *Repository) ListRoomAgenda(ctx context.Context, roomID int64) ([]map[string]any, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT id, user_id, package_id, host_id, slot_start, duration_minutes, status
-		FROM reservation_holds WHERE room_id=$1 ORDER BY slot_start DESC LIMIT 200
+		SELECT h.id, h.user_id, h.package_id, h.host_id, h.slot_start, h.duration_minutes, h.status,
+		       b.id, b.session_notes_encrypted
+		FROM reservation_holds h
+		LEFT JOIN bookings b ON b.hold_id=h.id
+		WHERE h.room_id=$1 AND h.status<>'active'
+		ORDER BY h.slot_start DESC
+		LIMIT 200
 	`, roomID)
 	if err != nil {
 		return nil, err
@@ -752,22 +804,30 @@ func (r *Repository) ListRoomAgenda(ctx context.Context, roomID int64) ([]map[st
 	defer rows.Close()
 	items := []map[string]any{}
 	for rows.Next() {
-		var id, userID, packageID, hostID int64
+		var id, userID, packageID, hostID, bookingID sql.NullInt64
 		var slotStart time.Time
 		var duration int
 		var status string
-		if err := rows.Scan(&id, &userID, &packageID, &hostID, &slotStart, &duration, &status); err != nil {
+		var rawNotes sql.NullString
+		if err := rows.Scan(&id, &userID, &packageID, &hostID, &slotStart, &duration, &status, &bookingID, &rawNotes); err != nil {
 			return nil, err
 		}
-		items = append(items, map[string]any{
-			"id":              id,
-			"travelerId":      userID,
-			"packageId":       packageID,
-			"hostId":          hostID,
+		item := map[string]any{
+			"id":              id.Int64,
+			"travelerId":      userID.Int64,
+			"packageId":       packageID.Int64,
+			"hostId":          hostID.Int64,
 			"slotStart":       slotStart,
 			"durationMinutes": duration,
 			"status":          status,
-		})
+		}
+		if bookingID.Valid {
+			item["bookingId"] = bookingID.Int64
+		}
+		if rawNotes.Valid {
+			item["sessionNotesEncrypted"] = rawNotes.String
+		}
+		items = append(items, item)
 	}
 	return items, rows.Err()
 }
@@ -979,7 +1039,7 @@ func (r *Repository) ConfirmHold(ctx context.Context, userID, holdID int64, expe
 	var ownerID int64
 	err = tx.QueryRow(ctx, `
 		SELECT package_id, host_id, room_id, slot_start, duration_minutes, version, status, expires_at, user_id
-		FROM reservation_holds WHERE id=$1
+		FROM reservation_holds WHERE id=$1 FOR UPDATE
 	`, holdID).Scan(&packageID, &hostID, &roomID, &slotStart, &duration, &version, &status, &expiresAt, &ownerID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -1026,19 +1086,55 @@ func (r *Repository) ConfirmHold(ctx context.Context, userID, holdID int64, expe
 	var bookingID int64
 	if err := tx.QueryRow(ctx, `
 		INSERT INTO bookings(hold_id,user_id,package_id,host_id,room_id,slot_start,duration_minutes,status,version)
-		VALUES($1,$2,$3,$4,$5,$6,$7,'confirmed',1)
+		VALUES($1,$2,$3,$4,$5,$6,$7,'scheduled',1)
 		RETURNING id
 	`, holdID, userID, packageID, hostID, roomID, slotStart, duration).Scan(&bookingID); err != nil {
 		return 0, err
 	}
 
-	if _, err := tx.Exec(ctx, `UPDATE reservation_holds SET status='confirmed', version=version+1 WHERE id=$1`, holdID); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE reservation_holds SET status='scheduled', version=version+1 WHERE id=$1`, holdID); err != nil {
 		return 0, err
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return 0, err
 	}
 	return bookingID, nil
+}
+
+func (r *Repository) UpdateBookingStatus(ctx context.Context, bookingID int64, status string, encryptedNotes *string) error {
+	if !isBookingStatusValid(status) {
+		return ErrInvalidBookingStatus
+	}
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	var holdID int64
+	if err := tx.QueryRow(ctx, `SELECT hold_id FROM bookings WHERE id=$1 FOR UPDATE`, bookingID).Scan(&holdID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrNotFound
+		}
+		return err
+	}
+
+	args := []any{status}
+	query := `UPDATE bookings SET status=$1`
+	if encryptedNotes != nil {
+		args = append(args, *encryptedNotes)
+		query += `, session_notes_encrypted=$2`
+	}
+	args = append(args, bookingID)
+	query += fmt.Sprintf(` WHERE id=$%d`, len(args))
+
+	if _, err := tx.Exec(ctx, query, args...); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE reservation_holds SET status=$1, version=version+1 WHERE id=$2`, status, holdID); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 func (r *Repository) ListCommunityPosts(ctx context.Context) ([]map[string]any, error) {
@@ -1279,11 +1375,16 @@ func (r *Repository) AnalyticsKPIs(ctx context.Context, from, to time.Time, prov
 	}, nil
 }
 
-func (r *Repository) ExportAnalyticsCSV(ctx context.Context, outDir string, kpis map[string]any) (string, error) {
+func (r *Repository) ExportAnalyticsCSV(ctx context.Context, outDir string, jobID int64, reportType string, kpis map[string]any) (string, error) {
 	if err := os.MkdirAll(outDir, 0755); err != nil {
 		return "", err
 	}
-	name := fmt.Sprintf("analytics-%s.csv", time.Now().UTC().Format("20060102-150405"))
+	label := sanitizeFileLabel(reportType)
+	prefix := "manual"
+	if jobID > 0 {
+		prefix = fmt.Sprintf("job-%d", jobID)
+	}
+	name := fmt.Sprintf("%s-%s-%s.csv", label, prefix, time.Now().UTC().Format("20060102-150405"))
 	path := filepath.Join(outDir, name)
 	f, err := os.Create(path)
 	if err != nil {
@@ -1348,7 +1449,7 @@ func (r *Repository) ListReportJobs(ctx context.Context) ([]map[string]any, erro
 
 func (r *Repository) ProcessDueReportJobs(ctx context.Context, outDir string) error {
 	rows, err := r.pool.Query(ctx, `
-		SELECT id
+		SELECT id, report_type, parameters, scheduled_for
 		FROM report_jobs
 		WHERE status='scheduled' AND scheduled_for <= NOW()
 		ORDER BY scheduled_for ASC
@@ -1358,32 +1459,151 @@ func (r *Repository) ProcessDueReportJobs(ctx context.Context, outDir string) er
 		return err
 	}
 	defer rows.Close()
-	ids := []int64{}
+	jobs := []struct {
+		id           int64
+		reportType   string
+		parameters   []byte
+		scheduledFor time.Time
+	}{}
 	for rows.Next() {
-		var id int64
-		if err := rows.Scan(&id); err != nil {
+		var job struct {
+			id           int64
+			reportType   string
+			parameters   []byte
+			scheduledFor time.Time
+		}
+		if err := rows.Scan(&job.id, &job.reportType, &job.parameters, &job.scheduledFor); err != nil {
 			return err
 		}
-		ids = append(ids, id)
+		jobs = append(jobs, job)
 	}
-	for _, id := range ids {
-		kpis, err := r.AnalyticsKPIs(ctx, time.Now().UTC().Add(-24*time.Hour), time.Now().UTC(), nil, nil)
-		if err != nil {
-			_, _ = r.pool.Exec(ctx, `UPDATE report_jobs SET status='failed' WHERE id=$1`, id)
+	for _, job := range jobs {
+		from, to, providerID, packageID, paramsErr := parseReportJobParams(job.parameters, job.scheduledFor)
+		if paramsErr != nil {
+			_, _ = r.pool.Exec(ctx, `UPDATE report_jobs SET status='failed' WHERE id=$1`, job.id)
 			continue
 		}
-		path, err := r.ExportAnalyticsCSV(ctx, outDir, kpis)
+		kpis, err := r.AnalyticsKPIs(ctx, from, to, providerID, packageID)
 		if err != nil {
-			_, _ = r.pool.Exec(ctx, `UPDATE report_jobs SET status='failed' WHERE id=$1`, id)
+			_, _ = r.pool.Exec(ctx, `UPDATE report_jobs SET status='failed' WHERE id=$1`, job.id)
+			continue
+		}
+		path, err := r.ExportAnalyticsCSV(ctx, outDir, job.id, job.reportType, kpis)
+		if err != nil {
+			_, _ = r.pool.Exec(ctx, `UPDATE report_jobs SET status='failed' WHERE id=$1`, job.id)
 			continue
 		}
 		_, _ = r.pool.Exec(ctx, `
 			UPDATE report_jobs
 			SET status='completed', output_path=$2, completed_at=NOW()
 			WHERE id=$1
-		`, id, path)
+		`, job.id, path)
 	}
 	return nil
+}
+
+func parseReportJobParams(raw []byte, scheduledFor time.Time) (time.Time, time.Time, *int64, *int64, error) {
+	from := scheduledFor.Add(-24 * time.Hour)
+	to := scheduledFor
+	var providerID *int64
+	var packageID *int64
+	if len(raw) == 0 {
+		return from, to, providerID, packageID, nil
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return time.Time{}, time.Time{}, nil, nil, err
+	}
+	if v, ok := payload["from"]; ok {
+		if parsed, err := parseReportTime(v); err == nil {
+			from = parsed
+		} else {
+			return time.Time{}, time.Time{}, nil, nil, err
+		}
+	}
+	if v, ok := payload["to"]; ok {
+		if parsed, err := parseReportTime(v); err == nil {
+			to = parsed
+		} else {
+			return time.Time{}, time.Time{}, nil, nil, err
+		}
+	}
+	if v, ok := payload["providerId"]; ok {
+		if parsed, err := parseReportID(v); err == nil {
+			providerID = parsed
+		} else {
+			return time.Time{}, time.Time{}, nil, nil, err
+		}
+	}
+	if v, ok := payload["packageId"]; ok {
+		if parsed, err := parseReportID(v); err == nil {
+			packageID = parsed
+		} else {
+			return time.Time{}, time.Time{}, nil, nil, err
+		}
+	}
+	return from, to, providerID, packageID, nil
+}
+
+func parseReportTime(value any) (time.Time, error) {
+	switch v := value.(type) {
+	case string:
+		return time.Parse(time.RFC3339, v)
+	case time.Time:
+		return v, nil
+	default:
+		return time.Time{}, fmt.Errorf("invalid time parameter: %v", value)
+	}
+}
+
+func parseReportID(value any) (*int64, error) {
+	switch v := value.(type) {
+	case nil:
+		return nil, nil
+	case float64:
+		out := int64(v)
+		return &out, nil
+	case json.Number:
+		num, err := v.Int64()
+		if err != nil {
+			return nil, err
+		}
+		return &num, nil
+	case string:
+		if strings.TrimSpace(v) == "" {
+			return nil, nil
+		}
+		num, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			return nil, err
+		}
+		return &num, nil
+	default:
+		return nil, fmt.Errorf("invalid id parameter: %T", value)
+	}
+}
+
+func sanitizeFileLabel(label string) string {
+	label = strings.TrimSpace(label)
+	if label == "" {
+		return "analytics"
+	}
+	label = strings.ToLower(label)
+	label = strings.ReplaceAll(label, "_", "-")
+	label = strings.ReplaceAll(label, " ", "-")
+	label = strings.Map(func(r rune) rune {
+		if r == '-' || r == '_' || (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			return r
+		}
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			return unicode.ToLower(r)
+		}
+		return -1
+	}, label)
+	if label == "" {
+		return "analytics"
+	}
+	return label
 }
 
 func (r *Repository) LikeTarget(ctx context.Context, userID int64, targetType string, targetID int64) error {

@@ -6,11 +6,13 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"meridian/backend/internal/api/middleware"
 	"meridian/backend/internal/api/response"
 	"meridian/backend/internal/repository"
+	"meridian/backend/internal/security"
 	"meridian/backend/internal/service"
 
 	"github.com/labstack/echo/v4"
@@ -20,6 +22,7 @@ type DomainHandler struct {
 	profiles        *service.ProfileService
 	booking         *service.BookingService
 	repo            *repository.Repository
+	encryptor       *security.Encryptor
 	slotGranularity int
 }
 
@@ -34,8 +37,20 @@ func optionalInt64(v string) (*int64, error) {
 	return &out, nil
 }
 
-func NewDomainHandler(profiles *service.ProfileService, booking *service.BookingService, repo *repository.Repository, slotGranularity int) *DomainHandler {
-	return &DomainHandler{profiles: profiles, booking: booking, repo: repo, slotGranularity: slotGranularity}
+func NewDomainHandler(
+	profiles *service.ProfileService,
+	booking *service.BookingService,
+	repo *repository.Repository,
+	encryptor *security.Encryptor,
+	slotGranularity int,
+) *DomainHandler {
+	return &DomainHandler{
+		profiles:        profiles,
+		booking:         booking,
+		repo:            repo,
+		encryptor:       encryptor,
+		slotGranularity: slotGranularity,
+	}
 }
 
 type addressRequest struct {
@@ -382,6 +397,7 @@ func (h *DomainHandler) HostAgenda(c echo.Context) error {
 	if err != nil {
 		return response.JSONError(c, http.StatusInternalServerError, err.Error())
 	}
+	h.enrichSessionNotes(items)
 	return c.JSON(http.StatusOK, map[string]any{"items": items})
 }
 
@@ -394,7 +410,67 @@ func (h *DomainHandler) RoomAgenda(c echo.Context) error {
 	if err != nil {
 		return response.JSONError(c, http.StatusInternalServerError, err.Error())
 	}
+	h.enrichSessionNotes(items)
 	return c.JSON(http.StatusOK, map[string]any{"items": items})
+}
+
+type bookingStatusRequest struct {
+	Status string `json:"status"`
+	Notes  string `json:"notes"`
+}
+
+func (h *DomainHandler) UpdateBookingStatus(c echo.Context) error {
+	uid, ok := middleware.UserID(c)
+	if !ok {
+		return response.JSONError(c, http.StatusUnauthorized, "missing user context")
+	}
+	bookingID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || bookingID <= 0 {
+		return response.JSONError(c, http.StatusBadRequest, "invalid booking id")
+	}
+	var req bookingStatusRequest
+	if err := response.BindAndValidate(c, &req, func(r *bookingStatusRequest) error {
+		if strings.TrimSpace(r.Status) == "" {
+			return echo.NewHTTPError(http.StatusBadRequest, "status required")
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	trimmedStatus := strings.TrimSpace(req.Status)
+	if !middleware.HasAnyRole(c, "operations", "admin") {
+		hostID, hostErr := h.repo.GetBookingHost(c.Request().Context(), bookingID)
+		if hostErr != nil {
+			if errors.Is(hostErr, repository.ErrNotFound) {
+				return response.JSONError(c, http.StatusNotFound, "booking not found")
+			}
+			return response.JSONError(c, http.StatusInternalServerError, hostErr.Error())
+		}
+		if hostID != uid {
+			return response.JSONError(c, http.StatusForbidden, "ownership check failed")
+		}
+	}
+	var encryptedNotes *string
+	if trimmed := strings.TrimSpace(req.Notes); trimmed != "" {
+		if h.encryptor == nil {
+			return response.JSONError(c, http.StatusInternalServerError, "encryption unavailable")
+		}
+		payload, encErr := h.encryptor.Encrypt(trimmed)
+		if encErr != nil {
+			return response.JSONError(c, http.StatusInternalServerError, "notes encryption failed")
+		}
+		encryptedNotes = &payload
+	}
+	if err := h.repo.UpdateBookingStatus(c.Request().Context(), bookingID, trimmedStatus, encryptedNotes); err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			return response.JSONError(c, http.StatusNotFound, "booking not found")
+		}
+		if errors.Is(err, repository.ErrInvalidBookingStatus) {
+			return response.JSONError(c, http.StatusBadRequest, "invalid status")
+		}
+		return response.JSONError(c, http.StatusBadRequest, err.Error())
+	}
+	return c.JSON(http.StatusOK, map[string]any{"status": "ok"})
 }
 
 func (h *DomainHandler) GetUser(c echo.Context) error {
@@ -841,7 +917,7 @@ func (h *DomainHandler) ExportAnalytics(c echo.Context) error {
 	if outDir == "" {
 		outDir = "/tmp/exports"
 	}
-	path, err := h.repo.ExportAnalyticsCSV(c.Request().Context(), outDir, kpis)
+	path, err := h.repo.ExportAnalyticsCSV(c.Request().Context(), outDir, 0, "manual", kpis)
 	if err != nil {
 		return response.JSONError(c, http.StatusInternalServerError, err.Error())
 	}
@@ -881,4 +957,33 @@ func (h *DomainHandler) ListReportJobs(c echo.Context) error {
 		return response.JSONError(c, http.StatusInternalServerError, err.Error())
 	}
 	return c.JSON(http.StatusOK, map[string]any{"items": items})
+}
+
+func (h *DomainHandler) enrichSessionNotes(items []map[string]any) {
+	if h.encryptor == nil {
+		return
+	}
+	for _, item := range items {
+		raw, ok := item["sessionNotesEncrypted"].(string)
+		if !ok || raw == "" {
+			delete(item, "sessionNotesEncrypted")
+			continue
+		}
+		if decoded, err := h.encryptor.Decrypt(raw); err == nil {
+			item["sessionNotes"] = decoded
+			item["sessionNotesSummary"] = summarizeText(decoded)
+		}
+		delete(item, "sessionNotesEncrypted")
+	}
+}
+
+func summarizeText(value string) string {
+	text := strings.TrimSpace(value)
+	if len(text) == 0 {
+		return ""
+	}
+	if len(text) <= 120 {
+		return text
+	}
+	return text[:120] + "..."
 }
