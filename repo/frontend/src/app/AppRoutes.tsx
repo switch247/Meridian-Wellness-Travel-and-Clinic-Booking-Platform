@@ -5,10 +5,8 @@ import { AppLayout } from '../layouts/AppLayout';
 import { LoginPage } from '../pages/LoginPage';
 import { DashboardPage } from '../pages/DashboardPage';
 import { CatalogPage } from '../pages/CatalogPage';
-import { BookingPage } from '../pages/BookingPage';
 import { ProfilePage } from '../pages/ProfilePage';
 import { AdminPage } from '../pages/AdminPage';
-import { DocsPage } from '../pages/DocsPage';
 import { NotFoundPage } from '../pages/NotFoundPage';
 import { MyReservationsPage } from '../pages/MyReservationsPage';
 import { MyAgendaPage } from '../pages/MyAgendaPage';
@@ -37,7 +35,6 @@ export function AppRoutes() {
           </Route>
 
           <Route element={<RoleProtectedRoute roles={['traveler', 'admin']} />}>
-            <Route path="/booking" element={<BookingPage />} />
             <Route path="/profile" element={<ProfilePage />} />
           </Route>
 
@@ -53,10 +50,12 @@ export function AppRoutes() {
           <Route element={<RoleProtectedRoute roles={['operations', 'admin']} />}>
             <Route path="/ops-scheduling" element={<OpsSchedulingPage />} />
             <Route path="/analytics" element={<AnalyticsPage />} />
+          </Route>
+
+          <Route element={<RoleProtectedRoute roles={['admin']} />}>
             <Route path="/email-queue" element={<EmailQueuePage />} />
             <Route path="/role-audits" element={<RoleAuditPage />} />
             <Route path="/admin" element={<AdminPage />} />
-            <Route path="/docs" element={<DocsPage />} />
           </Route>
         </Route>
       </Route>

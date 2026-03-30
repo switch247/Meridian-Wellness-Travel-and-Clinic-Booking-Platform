@@ -10,29 +10,88 @@ import (
 	"time"
 )
 
-func TestBookingOverlapConflict(t *testing.T) {
+func TestSuccessfulBooking(t *testing.T) {
 	token := makeUserToken(t)
-	slot := time.Now().UTC().Add(2 * time.Hour).Truncate(time.Minute)
+
+	// Add required address
+	res, body := call(http.MethodPost, "/profile/addresses", token, map[string]any{
+		"line1":      "123 Test St",
+		"line2":      "Apt 4B",
+		"city":       "Test City",
+		"state":      "TS",
+		"postalCode": "10001", // Use allowed postal code
+	}, t)
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("address creation failed: %d %+v", res.StatusCode, body)
+	}
+
+	// Use a unique time slot for this test (current time + unique offset)
+	slot := time.Date(2026, 3, 31, 11+int(time.Now().Unix()%10), 0, 0, 0, time.UTC)
+	res, body = call(http.MethodPost, "/bookings/holds", token, map[string]any{
+		"packageId": 360,
+		"hostId":    3, // coach@example.com
+		"roomId":    1, // Room A
+		"slotStart": slot.Format(time.RFC3339),
+		"duration":  45,
+	}, t)
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("expected booking created, got %d: %+v", res.StatusCode, body)
+	}
+
+	// Verify the response contains expected fields
+	holdId, ok := body["holdId"].(float64)
+	if !ok || holdId <= 0 {
+		t.Fatal("expected valid holdId in response")
+	}
+	version, ok := body["version"].(float64)
+	if !ok || version != 1 {
+		t.Fatal("expected version=1 in response")
+	}
+	status, ok := body["status"].(string)
+	if !ok || status != "active" {
+		t.Fatal("expected status=active in response")
+	}
+}
+
+func TestBookingConflict(t *testing.T) {
+	token := makeUserToken(t)
+
+	// Add required address
+	res, body := call(http.MethodPost, "/profile/addresses", token, map[string]any{
+		"line1":      "123 Test St",
+		"line2":      "Apt 4B",
+		"city":       "Test City",
+		"state":      "TS",
+		"postalCode": "10001", // Use allowed postal code
+	}, t)
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("address creation failed: %d %+v", res.StatusCode, body)
+	}
+	// Use a unique time slot for this test (current time + unique offset)
+	slot := time.Date(2026, 3, 31, 16+int(time.Now().Unix()%10), 0, 0, 0, time.UTC)
+
+	// First booking should succeed
 	res1, _ := call(http.MethodPost, "/bookings/holds", token, map[string]any{
-		"packageId": 1,
-		"hostId":    9001,
-		"roomId":    8001,
+		"packageId": 361,
+		"hostId":    3, // coach@example.com
+		"roomId":    1, // Room A
 		"slotStart": slot.Format(time.RFC3339),
 		"duration":  60,
 	}, t)
 	if res1.StatusCode != http.StatusCreated {
-		t.Fatalf("expected first hold created, got %d", res1.StatusCode)
+		t.Fatalf("expected first booking created, got %d", res1.StatusCode)
 	}
 
-	res2, _ := call(http.MethodPost, "/bookings/holds", token, map[string]any{
-		"packageId": 1,
-		"hostId":    9001,
-		"roomId":    8001,
-		"slotStart": slot.Add(15 * time.Minute).Format(time.RFC3339),
-		"duration":  30,
+	// Second booking with overlapping time should conflict
+	res2, body2 := call(http.MethodPost, "/bookings/holds", token, map[string]any{
+		"packageId": 361,
+		"hostId":    3,                                               // same host
+		"roomId":    1,                                               // same room
+		"slotStart": slot.Add(15 * time.Minute).Format(time.RFC3339), // overlaps
+		"duration":  45,
 	}, t)
 	if res2.StatusCode != http.StatusConflict {
-		t.Fatalf("expected conflict on overlapping slot, got %d", res2.StatusCode)
+		t.Fatalf("expected conflict (409), got %d: %+v", res2.StatusCode, body2)
 	}
 }
 
@@ -42,8 +101,8 @@ func TestConcurrentBookingConflict(t *testing.T) {
 	slot := time.Now().UTC().Add(4 * time.Hour).Truncate(time.Minute)
 	payload := map[string]any{
 		"packageId": 1,
-		"hostId":    9101,
-		"roomId":    8101,
+		"hostId":    4, // clinician@example.com
+		"roomId":    2, // Room B
 		"slotStart": slot.Format(time.RFC3339),
 		"duration":  45,
 	}

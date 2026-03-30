@@ -12,25 +12,30 @@ export type BookingPayload = {
 export function BookingHoldForm({
   onSubmit,
   packages,
-  fetchSlots
+  fetchSlots,
+  hosts,
+  rooms
 }: {
   onSubmit: (payload: BookingPayload) => Promise<void>;
   packages: Array<{ id: number; name: string }>;
   fetchSlots: (input: { hostId: number; roomId: number; day: string; duration: number }) => Promise<Array<{ slotStart: string }>>;
+  hosts: Array<{ id: number; username: string }>;
+  rooms: Array<{ id: number; name: string }>;
 }) {
   const [payload, setPayload] = useState<BookingPayload>({
     packageId: packages[0]?.id || 1,
-    hostId: 1,
-    roomId: 1,
-    slotStart: new Date(Date.now() + 3600000).toISOString().slice(0, 16),
+    hostId: hosts[0]?.id || 1,
+    roomId: rooms[0]?.id || 1,
+    slotStart: new Date(Date.now() + 3600000).toISOString().slice(0, 16), // 1 hour from now 
     duration: 45
   });
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [slots, setSlots] = useState<Array<{ slotStart: string }>>([]);
+  const [slotsLoading, setSlotsLoading] = useState(false);
 
-  const minTime = useMemo(() => new Date().toISOString().slice(0, 16), []);
+  const minTime = useMemo(() => new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 16), []);
 
   return (
     <Paper sx={{ p: 2.5 }}>
@@ -48,8 +53,28 @@ export function BookingHoldForm({
           ))}
         </TextField>
         <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
-          <TextField label="Host ID" type="number" value={payload.hostId} onChange={(e) => setPayload((p) => ({ ...p, hostId: Number(e.target.value) }))} fullWidth />
-          <TextField label="Room ID" type="number" value={payload.roomId} onChange={(e) => setPayload((p) => ({ ...p, roomId: Number(e.target.value) }))} fullWidth />
+          <TextField
+            select
+            label="Host"
+            value={payload.hostId}
+            onChange={(e) => setPayload((p) => ({ ...p, hostId: Number(e.target.value) }))}
+            fullWidth
+          >
+            {hosts.map((host) => (
+              <MenuItem key={host.id} value={host.id}>{host.username}</MenuItem>
+            ))}
+          </TextField>
+          <TextField
+            select
+            label="Room"
+            value={payload.roomId}
+            onChange={(e) => setPayload((p) => ({ ...p, roomId: Number(e.target.value) }))}
+            fullWidth
+          >
+            {rooms.map((room) => (
+              <MenuItem key={room.id} value={room.id}>{room.name}</MenuItem>
+            ))}
+          </TextField>
         </Stack>
         <TextField
           label="Slot Start"
@@ -60,16 +85,22 @@ export function BookingHoldForm({
         />
         <Button
           variant="outlined"
+          disabled={slotsLoading}
           onClick={async () => {
-            const day = payload.slotStart.slice(0, 10);
-            const available = await fetchSlots({ hostId: payload.hostId, roomId: payload.roomId, day, duration: payload.duration });
-            setSlots(available);
-            if (available[0]?.slotStart) {
-              setPayload((p) => ({ ...p, slotStart: new Date(available[0].slotStart).toISOString().slice(0, 16) }));
+            setSlotsLoading(true);
+            try {
+              const day = payload.slotStart.slice(0, 10);
+              const available = await fetchSlots({ hostId: payload.hostId, roomId: payload.roomId, day, duration: payload.duration });
+              setSlots(available);
+              if (available[0]?.slotStart) {
+                setPayload((p) => ({ ...p, slotStart: new Date(available[0].slotStart).toISOString().slice(0, 16) }));
+              }
+            } finally {
+              setSlotsLoading(false);
             }
           }}
         >
-          Load Available Slots
+          {slotsLoading ? 'Loading...' : 'Load Available Slots'}
         </Button>
         {slots.length > 0 ? (
           <Stack spacing={1}>
@@ -92,8 +123,12 @@ export function BookingHoldForm({
               })}
             </Stack>
           </Stack>
+        ) : slotsLoading ? (
+          <Typography variant="caption" color="text.secondary">Loading slots...</Typography>
+        ) : slots.length === 0 && !slotsLoading ? (
+          <Typography variant="caption" color="text.secondary">No available slots for the selected date and duration.</Typography>
         ) : (
-          <Typography variant="caption" color="text.secondary">Use \"Load Available Slots\" to see capacity.</Typography>
+          <Typography variant="caption" color="text.secondary">Use "Load Available Slots" to see capacity.</Typography>
         )}
         <TextField
           select

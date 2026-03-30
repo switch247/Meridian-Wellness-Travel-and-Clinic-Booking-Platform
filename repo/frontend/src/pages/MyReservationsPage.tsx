@@ -1,4 +1,5 @@
-import { Alert, Button, Paper, Stack, Typography, Dialog, DialogTitle, DialogContent, DialogActions } from '@mui/material';
+import { Alert, Button, Paper, Stack, Typography, Dialog, DialogTitle, DialogContent, DialogActions, Menu, MenuItem, IconButton } from '@mui/material';
+import MoreVertIcon from '@mui/icons-material/MoreVert';
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
 import { SectionHeader } from '../components/common/SectionHeader';
@@ -23,6 +24,8 @@ export function MyReservationsPage() {
   useEffect(() => { load().catch(() => {}); }, [token]);
   const [detail, setDetail] = useState<Record<string, unknown> | null>(null);
   const [confirm, setConfirm] = useState<{ open: boolean; id?: number | null; message?: string }>({ open: false });
+  const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
+  const [selectedRow, setSelectedRow] = useState<any>(null);
 
   return (
     <Stack spacing={2.5}>
@@ -34,22 +37,73 @@ export function MyReservationsPage() {
           <Alert severity="info" sx={{ mt: 1 }}>No reservations yet. Start from Catalog or Booking.</Alert>
         ) : (
           <EntityTable
-            rows={(holds as any[]).map(h => ({ id: Number(h.id), packageId: h.packageId, status: h.status, slotStart: h.slotStart, _raw: h }))}
-            columns={[{ field: 'id', headerName: 'ID', width: 90 }, { field: 'packageId', headerName: 'Package', width: 140 }, { field: 'slotStart', headerName: 'Start', width: 220 }, { field: 'status', headerName: 'Status', width: 120 }, { field: 'actions', headerName: 'Actions', width: 240, sortable: false, renderCell: (p) => (
-              <Stack direction="row" spacing={1}>
-                <Button size="small" variant="outlined" onClick={() => setDetail(p.row._raw)}>Details</Button>
-                <Button size="small" variant="contained" onClick={async () => {
-                  if (!token) return;
-                  await api.confirmHold(token, { holdId: Number(p.row.id), version: Number(p.row._raw?.version ?? 0) });
-                  await load();
-                }}>Confirm</Button>
-                <Button size="small" color="error" variant="outlined" onClick={() => setConfirm({ open: true, id: Number(p.row.id), message: 'Cancel this hold?' })}>Cancel</Button>
-              </Stack>
-            ) } ] as GridColDef[]}
-            height={280}
+            rows={(holds as any[]).map(h => ({
+              id: Number(h.id),
+              packageId: String(h.packageId || 'N/A'),
+              status: String(h.status || 'Unknown'),
+              slotStart: new Date(String(h.slotStart || '')).toLocaleString(),
+              _raw: h
+            }))}
+            columns={[
+              { field: 'id', headerName: 'ID', width: 70 },
+              { field: 'packageId', headerName: 'Package', flex: 1, minWidth: 120 },
+              { field: 'slotStart', headerName: 'Start Time', flex: 1, minWidth: 180 },
+              { field: 'status', headerName: 'Status', width: 100 },
+              {
+                field: 'actions',
+                headerName: '',
+                width: 50,
+                sortable: false,
+                renderCell: (p: any) => (
+                  p.row.status === 'active' ? (
+                    <IconButton
+                      size="small"
+                      onClick={(e) => {
+                        setMenuAnchor(e.currentTarget);
+                        setSelectedRow(p.row);
+                      }}
+                    >
+                      <MoreVertIcon />
+                    </IconButton>
+                  ) : (
+                    <Typography variant="caption" color="text.secondary">
+                      {p.row.status}
+                    </Typography>
+                  )
+                )
+              }
+            ] as GridColDef[]}
+            height={300}
+            sx={{ width: '100%' }}
           />
         )}
       </Paper>
+      <Menu
+        anchorEl={menuAnchor}
+        open={Boolean(menuAnchor)}
+        onClose={() => setMenuAnchor(null)}
+      >
+        <MenuItem onClick={() => {
+          setDetail(selectedRow?._raw);
+          setMenuAnchor(null);
+        }}>
+          Details
+        </MenuItem>
+        <MenuItem onClick={async () => {
+          if (!token || !selectedRow) return;
+          await api.confirmHold(token, { holdId: Number(selectedRow.id), version: Number(selectedRow._raw?.version ?? 0) });
+          await load();
+          setMenuAnchor(null);
+        }}>
+          Confirm
+        </MenuItem>
+        <MenuItem onClick={() => {
+          setConfirm({ open: true, id: Number(selectedRow?.id), message: 'Cancel this hold?' });
+          setMenuAnchor(null);
+        }}>
+          Cancel
+        </MenuItem>
+      </Menu>
       <Dialog open={confirm.open} onClose={() => setConfirm({ open: false })}>
         <DialogTitle>Confirm</DialogTitle>
         <DialogContent>
@@ -79,9 +133,20 @@ export function MyReservationsPage() {
           <Alert severity="info" sx={{ mt: 1 }}>No booking history yet.</Alert>
         ) : (
           <EntityTable
-            rows={(history as any[]).map(h => ({ id: Number(h.id), packageId: h.packageId, status: h.status, slotStart: h.slotStart }))}
-            columns={[{ field: 'id', headerName: 'ID', width: 90 }, { field: 'packageId', headerName: 'Package', width: 140 }, { field: 'slotStart', headerName: 'Start', width: 220 }, { field: 'status', headerName: 'Status', width: 120 } ] as GridColDef[]}
-            height={280}
+            rows={(history as any[]).map(h => ({
+              id: Number(h.id),
+              packageId: String(h.packageId || 'N/A'),
+              status: String(h.status || 'Unknown'),
+              slotStart: new Date(String(h.slotStart || '')).toLocaleString()
+            }))}
+            columns={[
+              { field: 'id', headerName: 'ID', width: 70 },
+              { field: 'packageId', headerName: 'Package', flex: 1, minWidth: 150 },
+              { field: 'slotStart', headerName: 'Start Time', flex: 1, minWidth: 200 },
+              { field: 'status', headerName: 'Status', width: 120 }
+            ] as GridColDef[]}
+            height={300}
+            sx={{ width: '100%' }}
           />
         )}
       </Paper>

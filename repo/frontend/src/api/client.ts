@@ -1,4 +1,4 @@
-const API_BASE = import.meta.env.VITE_API_BASE || 'https://localhost:8443/api/v1';
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8443/api/v1';
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
@@ -55,6 +55,7 @@ export const api = {
   attractions: () => request<{ items: Array<Record<string, unknown>> }>('/catalog/attractions'),
   availableSlots: (token: string, q: { hostId: number; roomId: number; day: string; duration: number }) =>
     request<{ items: Array<Record<string, unknown>> }>(`/scheduling/slots?hostId=${q.hostId}&roomId=${q.roomId}&day=${encodeURIComponent(q.day)}&duration=${q.duration}`, { headers: { Authorization: `Bearer ${token}` } }),
+  listHosts: (token: string) => request<{ items: Array<Record<string, unknown>> }>('/scheduling/hosts', { headers: { Authorization: `Bearer ${token}` } }),
   confirmHold: (token: string, payload: { holdId: number; version?: number }) =>
     request('/bookings/confirm', { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(payload) }),
   communityPosts: (token: string) => request<{ items: Array<Record<string, unknown>> }>('/community/posts', { headers: { Authorization: `Bearer ${token}` } }),

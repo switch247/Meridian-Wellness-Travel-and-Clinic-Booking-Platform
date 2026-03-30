@@ -71,6 +71,8 @@ func (h *AuthHandler) Me(c echo.Context) error {
 	}
 	payload, err := h.auth.Me(c.Request().Context(), userID)
 	if err != nil {
+		// Log the error for debugging
+		c.Logger().Error("auth me failed", "userID", userID, "error", err)
 		return response.JSONError(c, http.StatusNotFound, err.Error())
 	}
 	return c.JSON(http.StatusOK, payload)

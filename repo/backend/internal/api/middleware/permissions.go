@@ -30,6 +30,7 @@ const (
 	PermCatalogHotelsRead      = "catalog.hotels.read"
 	PermCatalogAttractRead     = "catalog.attractions.read"
 	PermSchedulingSlotsRead    = "scheduling.slots.read"
+	PermSchedulingHostsRead    = "scheduling.hosts.read"
 	PermTravelerBookingConfirm = "traveler.booking.confirm"
 	PermCommunityRead          = "community.read"
 	PermCommunityWrite         = "community.write"
@@ -63,6 +64,7 @@ var PermissionRoles = map[string][]string{
 	PermCatalogHotelsRead:      {"traveler", "operations", "admin"},
 	PermCatalogAttractRead:     {"traveler", "operations", "admin"},
 	PermSchedulingSlotsRead:    {"traveler", "operations", "admin"},
+	PermSchedulingHostsRead:    {"traveler", "operations", "admin"},
 	PermTravelerBookingConfirm: {"traveler", "admin"},
 	PermCommunityRead:          {"traveler", "coach", "clinician", "operations", "admin"},
 	PermCommunityWrite:         {"traveler", "coach", "clinician", "operations", "admin"},

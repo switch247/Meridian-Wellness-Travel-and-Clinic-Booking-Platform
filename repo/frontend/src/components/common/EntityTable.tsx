@@ -2,13 +2,14 @@ import * as React from 'react';
 import { DataGrid, GridColDef, GridRenderCellParams } from '@mui/x-data-grid';
 import { Paper } from '@mui/material';
 
-export default function EntityTable({ rows, columns, height = 480 }: {
+export default function EntityTable({ rows, columns, height = 480, sx }: {
   rows: any[];
   columns: GridColDef[];
   height?: number;
+  sx?: any;
 }) {
   return (
-    <Paper sx={{ height, overflow: 'hidden' }}>
+    <Paper sx={{ height, overflow: 'hidden', ...sx }}>
       <DataGrid
         rows={rows}
         columns={columns}

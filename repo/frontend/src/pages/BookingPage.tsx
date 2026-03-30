@@ -1,4 +1,5 @@
 import {
+  Alert,
   Box,
   Button,
   Card,
@@ -21,22 +22,50 @@ import { useAuth } from '../context/AuthContext';
 export function BookingPage() {
   const { token } = useAuth();
   const [packages, setPackages] = useState<Array<{ id: number; name: string }>>([]);
+  const [hosts, setHosts] = useState<Array<{ id: number; username: string }>>([]);
+  const [rooms, setRooms] = useState<Array<{ id: number; name: string }>>([]);
   const [open, setOpen] = useState(false);
   const [holds, setHolds] = useState<Array<Record<string, unknown>>>([]);
   const [history, setHistory] = useState<Array<Record<string, unknown>>>([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+    // Fetch packages
     api.catalog().then((r) => {
       const pkgs = r.items.map((it, idx) => ({ id: Number(it.id ?? idx + 1), name: String(it.name ?? 'Package') }));
       const deduped = Array.from(new Map(pkgs.map((p) => [p.id, p])).values());
       setPackages(deduped.length ? deduped : [{ id: 1, name: 'Fallback Package' }]);
     });
+
+    // Fetch hosts (coaches and clinicians)
+    if (token) {
+      api.listHosts(token).then((r) => {
+        const hosts = (r.items || []).map((u) => ({ id: Number(u.id), username: String(u.username) }));
+        setHosts(hosts);
+      });
+
+      // Fetch rooms - assuming there's an API, but for now, mock
+      // TODO: Add API for rooms
+      setRooms([{ id: 1, name: 'Room A' }, { id: 2, name: 'Room B' }]);
+    }
+
     if (token) {
       api.listHolds(token).then((r) => setHolds(r.items || [])).catch(() => {});
       api.listHistory(token).then((r) => setHistory(r.items || [])).catch(() => {});
     }
   }, [token]);
+
+  const fetchSlots = async (input: { hostId: number; roomId: number; day: string; duration: number }) => {
+    if (!token) return [];
+    const r = await api.availableSlots(token, input);
+    return (r.items || []).map((it) => ({ slotStart: String(it.start || it.slotStart) }));
+  };
+
+  const onSubmitHold = async (payload: any) => {
+    if (!token) return;
+    await api.placeHold(token, payload);
+    setHolds((prev) => [...prev, { ...payload, status: 'held' }]);
+  };
 
   return (
     <Stack spacing={2.5}>
@@ -49,6 +78,8 @@ export function BookingPage() {
           <DialogContent>
             <BookingHoldForm
               packages={packages}
+              hosts={hosts}
+              rooms={rooms}
               fetchSlots={async (input) => {
                 if (!token) return [];
                 const out = await api.availableSlots(token, input);

@@ -14,7 +14,8 @@ function today() {
 }
 
 export function AnalyticsPage() {
-  const { token } = useAuth();
+  const { token, me } = useAuth();
+  const isAdmin = me?.roles?.includes('admin');
   const [from, setFrom] = useState(today());
   const [to, setTo] = useState(today());
   const [kpis, setKpis] = useState<Record<string, unknown>>({});
@@ -99,28 +100,30 @@ export function AnalyticsPage() {
             setMsg(`Exported to ${out.path}`);
           }}>Export CSV</Button>
         </Stack>
-        <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} sx={{ mt: 1.5 }}>
-          <TextField label="Report Type" value={reportType} onChange={(e) => setReportType(e.target.value)} sx={{ minWidth: 200 }} />
-          <TextField
-            type="datetime-local"
-            label="Schedule For"
-            InputLabelProps={{ shrink: true }}
-            value={scheduledFor}
-            onChange={(e) => setScheduledFor(e.target.value)}
-            sx={{ minWidth: 250 }}
-          />
-          <Button variant="contained" onClick={async () => {
-            if (!token) return;
-            const out = await api.scheduleReport(token, {
-              reportType,
-              parameters: { from, to, providerId, packageId },
-              scheduledFor: new Date(scheduledFor).toISOString()
-            });
-            setMsg(`Scheduled job #${String((out as { id?: number }).id ?? '')}`);
-            loadJobs();
-          }}>Schedule Report</Button>
-          <Button variant="text" onClick={() => loadJobs().catch(() => {})}>Refresh Jobs</Button>
-        </Stack>
+        {isAdmin && (
+          <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} sx={{ mt: 1.5 }}>
+            <TextField label="Report Type" value={reportType} onChange={(e) => setReportType(e.target.value)} sx={{ minWidth: 200 }} />
+            <TextField
+              type="datetime-local"
+              label="Schedule For"
+              InputLabelProps={{ shrink: true }}
+              value={scheduledFor}
+              onChange={(e) => setScheduledFor(e.target.value)}
+              sx={{ minWidth: 250 }}
+            />
+            <Button variant="contained" onClick={async () => {
+              if (!token) return;
+              const out = await api.scheduleReport(token, {
+                reportType,
+                parameters: { from, to, providerId, packageId },
+                scheduledFor: new Date(scheduledFor).toISOString()
+              });
+              setMsg(`Scheduled job #${String((out as { id?: number }).id ?? '')}`);
+              loadJobs();
+            }}>Schedule Report</Button>
+          </Stack>
+        )}
+        <Button variant="text" onClick={() => loadJobs().catch(() => {})} sx={{ mt: 1 }}>Refresh Jobs</Button>
       </Paper>
       {msg && <Alert severity="success">{msg}</Alert>}
       <Grid container spacing={2}>
@@ -148,7 +151,7 @@ export function AnalyticsPage() {
                 <CardContent>
                   <Typography variant="subtitle2">Job #{String(job.id)}</Typography>
                   <Typography variant="body2" color="text.secondary">
-                    Type: {String(job.reportType)} · Status: {String(job.status)} · Scheduled: {new Date(String(job.scheduledFor ?? job.createdAt || '')).toLocaleString()}
+                    Type: {String(job.reportType)} · Status: {String(job.status)} · Scheduled: {new Date(String((job.scheduledFor ?? job.createdAt) || '')).toLocaleString()}
                   </Typography>
                 </CardContent>
               </Card>

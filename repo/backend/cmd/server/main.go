@@ -59,7 +59,7 @@ func main() {
 	}
 
 	repo := repository.New(pool)
-	authSvc := service.NewAuthService(repo, cfg, encryptor)
+	authSvc := service.NewAuthService(repo, cfg, encryptor, appLogger.Logger)
 	profileSvc := service.NewProfileService(repo, cfg, encryptor)
 	bookingSvc := service.NewBookingService(repo, cfg)
 

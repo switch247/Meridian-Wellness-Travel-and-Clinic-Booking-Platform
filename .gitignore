@@ -43,3 +43,4 @@ Thumbs.db
 *.orig
 *.rej
 .agents/
+sessions/

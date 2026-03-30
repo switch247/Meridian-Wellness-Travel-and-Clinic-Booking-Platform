@@ -264,6 +264,28 @@ func (h *DomainHandler) ListUsers(c echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]any{"items": items})
 }
 
+func (h *DomainHandler) ListHosts(c echo.Context) error {
+	items, err := h.repo.ListUsers(c.Request().Context(), "")
+	if err != nil {
+		return response.JSONError(c, http.StatusInternalServerError, err.Error())
+	}
+	// Filter to only coach and clinician
+	filtered := []map[string]any{}
+	for _, item := range items {
+		roles, ok := item["roles"].([]string)
+		if !ok {
+			continue
+		}
+		for _, role := range roles {
+			if role == "coach" || role == "clinician" {
+				filtered = append(filtered, item)
+				break
+			}
+		}
+	}
+	return c.JSON(http.StatusOK, map[string]any{"items": filtered})
+}
+
 func (h *DomainHandler) ListRoleAudits(c echo.Context) error {
 	items, err := h.repo.ListPermissionAudits(c.Request().Context())
 	if err != nil {

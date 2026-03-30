@@ -10,18 +10,26 @@ FROM destinations
 ON CONFLICT DO NOTHING;
 
 INSERT INTO package_calendar(package_id, service_date, price_cents, inventory_remaining, blackout_note)
-SELECT p.id, CURRENT_DATE + offs.day_offset, 129900, 8,
+SELECT p.id, CURRENT_DATE + INTERVAL '1 year' + offs.day_offset * INTERVAL '1 day', 129900, 8,
 CASE WHEN offs.day_offset % 3 = 0 THEN 'No arrivals after 6:00 PM' ELSE NULL END
 FROM packages p
 CROSS JOIN (VALUES (1), (2), (3), (4), (5), (6), (7)) AS offs(day_offset)
 ON CONFLICT (package_id, service_date) DO NOTHING;
 
+-- Also create some inventory for current dates for testing
+INSERT INTO package_calendar(package_id, service_date, price_cents, inventory_remaining, blackout_note)
+SELECT p.id, CURRENT_DATE + offs.day_offset, 129900, 8,
+CASE WHEN offs.day_offset % 3 = 0 THEN 'No arrivals after 6:00 PM' ELSE NULL END
+FROM packages p
+CROSS JOIN (VALUES (0), (1), (2), (3), (4), (5), (6), (7)) AS offs(day_offset)
+ON CONFLICT (package_id, service_date) DO NOTHING;
+
 INSERT INTO users(username,password_hash,encrypted_phone,encrypted_address)
 VALUES (
   'admin',
-  '$2a$10$hI5N7nDwXXRsHGNPNLnbzevJlMnxgL3m50Zude5iMU6F9pYeoCEom',
-  'FyTZH3kdkqoM4HSD6AB8u4KqIcE1ydYzNkoxviWzMvpwcUOQeg4JFw==',
-  'bq44jk7UD94LmUQgAsGMTIxrlu2s2wbiLFC6cJv3HWMqzUAen+YryRIH'
+  '$2a$10$FSRYDfJLqM9x9bPbUc4zKOUOuU2yomTExzw3mfJ3F2qSRgiFeSZIO',
+  '37xsZgIybrz6HvxZnXNOeIJJ1xOVpTIomDY0H1eJDDgAwLa/kgsKPA==',
+  '4VZMBGmmay/R2tmnS4Mi6sBNGQBTCp7OanVp8nRddsA5hojPeOaggmVQ4CR1OXy8Ng/eypel2k8fdTc='
 )
 ON CONFLICT (username) DO UPDATE SET
   password_hash=EXCLUDED.password_hash,
@@ -42,12 +50,12 @@ ON CONFLICT DO NOTHING;
 -- Additional development users and roles (idempotent)
 INSERT INTO users(username,password_hash,encrypted_phone,encrypted_address)
 VALUES
-  ('admin@example.com','$2a$10$hI5N7nDwXXRsHGNPNLnbzevJlMnxgL3m50Zude5iMU6F9pYeoCEom','FyTZH3kdkqoM4HSD6AB8u4KqIcE1ydYzNkoxviWzMvpwcUOQeg4JFw==','bq44jk7UD94LmUQgAsGMTIxrlu2s2wbiLFC6cJv3HWMqzUAen+YryRIH'),
-  ('coach@example.com','$2a$10$hI5N7nDwXXRsHGNPNLnbzevJlMnxgL3m50Zude5iMU6F9pYeoCEom','FyTZH3kdkqoM4HSD6AB8u4KqIcE1ydYzNkoxviWzMvpwcUOQeg4JFw==','bq44jk7UD94LmUQgAsGMTIxrlu2s2wbiLFC6cJv3HWMqzUAen+YryRIH'),
-  ('clinician@example.com','$2a$10$hI5N7nDwXXRsHGNPNLnbzevJlMnxgL3m50Zude5iMU6F9pYeoCEom','FyTZH3kdkqoM4HSD6AB8u4KqIcE1ydYzNkoxviWzMvpwcUOQeg4JFw==','bq44jk7UD94LmUQgAsGMTIxrlu2s2wbiLFC6cJv3HWMqzUAen+YryRIH'),
-  ('operations@example.com','$2a$10$hI5N7nDwXXRsHGNPNLnbzevJlMnxgL3m50Zude5iMU6F9pYeoCEom','FyTZH3kdkqoM4HSD6AB8u4KqIcE1ydYzNkoxviWzMvpwcUOQeg4JFw==','bq44jk7UD94LmUQgAsGMTIxrlu2s2wbiLFC6cJv3HWMqzUAen+YryRIH'),
-  ('traveler1@example.com','$2a$10$hI5N7nDwXXRsHGNPNLnbzevJlMnxgL3m50Zude5iMU6F9pYeoCEom','FyTZH3kdkqoM4HSD6AB8u4KqIcE1ydYzNkoxviWzMvpwcUOQeg4JFw==','bq44jk7UD94LmUQgAsGMTIxrlu2s2wbiLFC6cJv3HWMqzUAen+YryRIH'),
-  ('traveler2@example.com','$2a$10$hI5N7nDwXXRsHGNPNLnbzevJlMnxgL3m50Zude5iMU6F9pYeoCEom','FyTZH3kdkqoM4HSD6AB8u4KqIcE1ydYzNkoxviWzMvpwcUOQeg4JFw==','bq44jk7UD94LmUQgAsGMTIxrlu2s2wbiLFC6cJv3HWMqzUAen+YryRIH')
+  ('admin@example.com','$2a$10$FSRYDfJLqM9x9bPbUc4zKOUOuU2yomTExzw3mfJ3F2qSRgiFeSZIO','37xsZgIybrz6HvxZnXNOeIJJ1xOVpTIomDY0H1eJDDgAwLa/kgsKPA==','4VZMBGmmay/R2tmnS4Mi6sBNGQBTCp7OanVp8nRddsA5hojPeOaggmVQ4CR1OXy8Ng/eypel2k8fdTc='),
+  ('coach@example.com','$2a$10$FSRYDfJLqM9x9bPbUc4zKOUOuU2yomTExzw3mfJ3F2qSRgiFeSZIO','37xsZgIybrz6HvxZnXNOeIJJ1xOVpTIomDY0H1eJDDgAwLa/kgsKPA==','4VZMBGmmay/R2tmnS4Mi6sBNGQBTCp7OanVp8nRddsA5hojPeOaggmVQ4CR1OXy8Ng/eypel2k8fdTc='),
+  ('clinician@example.com','$2a$10$FSRYDfJLqM9x9bPbUc4zKOUOuU2yomTExzw3mfJ3F2qSRgiFeSZIO','37xsZgIybrz6HvxZnXNOeIJJ1xOVpTIomDY0H1eJDDgAwLa/kgsKPA==','4VZMBGmmay/R2tmnS4Mi6sBNGQBTCp7OanVp8nRddsA5hojPeOaggmVQ4CR1OXy8Ng/eypel2k8fdTc='),
+  ('operations@example.com','$2a$10$FSRYDfJLqM9x9bPbUc4zKOUOuU2yomTExzw3mfJ3F2qSRgiFeSZIO','37xsZgIybrz6HvxZnXNOeIJJ1xOVpTIomDY0H1eJDDgAwLa/kgsKPA==','4VZMBGmmay/R2tmnS4Mi6sBNGQBTCp7OanVp8nRddsA5hojPeOaggmVQ4CR1OXy8Ng/eypel2k8fdTc='),
+  ('traveler1@example.com','$2a$10$FSRYDfJLqM9x9bPbUc4zKOUOuU2yomTExzw3mfJ3F2qSRgiFeSZIO','37xsZgIybrz6HvxZnXNOeIJJ1xOVpTIomDY0H1eJDDgAwLa/kgsKPA==','4VZMBGmmay/R2tmnS4Mi6sBNGQBTCp7OanVp8nRddsA5hojPeOaggmVQ4CR1OXy8Ng/eypel2k8fdTc='),
+  ('traveler2@example.com','$2a$10$FSRYDfJLqM9x9bPbUc4zKOUOuU2yomTExzw3mfJ3F2qSRgiFeSZIO','37xsZgIybrz6HvxZnXNOeIJJ1xOVpTIomDY0H1eJDDgAwLa/kgsKPA==','4VZMBGmmay/R2tmnS4Mi6sBNGQBTCp7OanVp8nRddsA5hojPeOaggmVQ4CR1OXy8Ng/eypel2k8fdTc=')
 ON CONFLICT (username) DO UPDATE SET
   password_hash=EXCLUDED.password_hash,
   encrypted_phone=EXCLUDED.encrypted_phone,
@@ -80,6 +88,16 @@ WHERE u.username IN ('coach@example.com', 'clinician@example.com')
 ON CONFLICT DO NOTHING;
 
 INSERT INTO host_availability_exceptions(host_id, exception_date, is_available, note)
+SELECT u.id, CURRENT_DATE + INTERVAL '1 year' + 1 * INTERVAL '1 day', FALSE, 'Unavailable for seeded exception-day test'
+FROM users u
+WHERE u.username='coach@example.com'
+AND NOT EXISTS (
+  SELECT 1 FROM host_availability_exceptions e
+  WHERE e.host_id=u.id AND e.exception_date=CURRENT_DATE + INTERVAL '1 year' + 1 * INTERVAL '1 day'
+);
+
+-- Also create exception for current date
+INSERT INTO host_availability_exceptions(host_id, exception_date, is_available, note)
 SELECT u.id, CURRENT_DATE + 1, FALSE, 'Unavailable for seeded exception-day test'
 FROM users u
 WHERE u.username='coach@example.com'
@@ -88,6 +106,11 @@ AND NOT EXISTS (
   WHERE e.host_id=u.id AND e.exception_date=CURRENT_DATE + 1
 );
 
+INSERT INTO holidays(holiday_date, name, closed_all_day)
+VALUES (CURRENT_DATE + INTERVAL '1 year' + 30 * INTERVAL '1 day', 'Demo Holiday', TRUE)
+ON CONFLICT DO NOTHING;
+
+-- Also create holiday for current period
 INSERT INTO holidays(holiday_date, name, closed_all_day)
 VALUES (CURRENT_DATE + 30, 'Demo Holiday', TRUE)
 ON CONFLICT DO NOTHING;

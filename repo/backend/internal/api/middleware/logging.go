@@ -32,6 +32,7 @@ func RequestLogger(logger *slog.Logger) echo.MiddlewareFunc {
 			req := c.Request()
 			reqID, _ := c.Get("requestID").(string)
 			ip := req.RemoteAddr
+			userID, _ := c.Get("userID").(int64)
 			logger.Info("request",
 				"req_id", reqID,
 				"method", req.Method,
@@ -39,6 +40,7 @@ func RequestLogger(logger *slog.Logger) echo.MiddlewareFunc {
 				"status", status,
 				"duration_ms", time.Since(start).Milliseconds(),
 				"ip", ip,
+				"user_id", userID,
 			)
 			return err
 		}

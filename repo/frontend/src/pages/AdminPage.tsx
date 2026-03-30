@@ -10,24 +10,24 @@ import { GridColDef, GridRenderCellParams } from '@mui/x-data-grid';
 
 export function AdminPage() {
   const { me, token } = useAuth();
-  const isPrivileged = (me?.roles || []).includes('admin') || (me?.roles || []).includes('operations');
+  const isAdmin = (me?.roles || []).includes('admin');
   const [users, setUsers] = useState<Array<Record<string, unknown>>>([]);
   const [assignOpen, setAssignOpen] = useState(false);
   const [assignTarget, setAssignTarget] = useState<number | null>(null);
   const [detail, setDetail] = useState<Record<string, unknown> | null>(null);
 
   async function load() {
-    if (!token || !isPrivileged) return;
+    if (!token || !isAdmin) return;
     const out = await api.adminUsers(token);
     setUsers(out.items || []);
   }
 
-  useEffect(() => { load().catch(() => {}); }, [token, isPrivileged]);
+  useEffect(() => { load().catch(() => {}); }, [token, isAdmin]);
 
   return (
     <Stack spacing={2.5}>
       <SectionHeader title="Admin Control Plane" subtitle="Role permissions and audit-sensitive actions." />
-      {!isPrivileged ? (
+      {!isAdmin ? (
         <Alert severity="warning">Your account is not authorized for admin endpoints yet.</Alert>
       ) : (
         <>
@@ -49,7 +49,7 @@ export function AdminPage() {
                   {
                     field: 'actions', headerName: 'Actions', width: 260, sortable: false, renderCell: (p: GridRenderCellParams) => (
                       <>
-                        <Button variant="outlined" size="small" onClick={() => { setAssignTarget(Number(p.row.id)); setAssignOpen(true); }} sx={{ mr: 1 }}>Assign Role</Button>
+                        {isAdmin && <Button variant="outlined" size="small" onClick={() => { setAssignTarget(Number(p.row.id)); setAssignOpen(true); }} sx={{ mr: 1 }}>Assign Role</Button>}
                         <Button variant="text" size="small" onClick={async () => {
                           if (!token) return;
                           try {
