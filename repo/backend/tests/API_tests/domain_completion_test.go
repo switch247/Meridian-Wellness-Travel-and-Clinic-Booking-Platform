@@ -178,6 +178,41 @@ func TestCommunityAndNotificationsFlow(t *testing.T) {
 	}
 }
 
+func TestReportNotificationFlow(t *testing.T) {
+	// reporter creates a post then files a report; admin resolves it; reporter should get a notification
+	reporter := makeUserToken(t)
+	// create a post
+	resPost, bodyPost := call(http.MethodPost, "/community/posts", reporter, map[string]any{"title": "Reportable", "body": "Please report me"}, t)
+	if resPost.StatusCode != http.StatusCreated {
+		t.Fatalf("expected 201 post, got %d body=%+v", resPost.StatusCode, bodyPost)
+	}
+	postID := int(bodyPost["id"].(float64))
+
+	// reporter files a report against the post
+	resReport, bodyReport := call(http.MethodPost, "/reports", reporter, map[string]any{"targetType": "post", "targetId": postID, "reason": "spam"}, t)
+	if resReport.StatusCode != http.StatusCreated {
+		t.Fatalf("expected 201 report, got %d body=%+v", resReport.StatusCode, bodyReport)
+	}
+	reportID := int(bodyReport["id"].(float64))
+
+	// admin resolves the report
+	admin := makeAdminToken(t)
+	resResolve, bodyResolve := call(http.MethodPost, "/admin/reports/"+strconv.Itoa(reportID)+"/resolve", admin, map[string]any{"status": "closed", "outcome": "no action"}, t)
+	if resResolve.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 resolve, got %d body=%+v", resResolve.StatusCode, bodyResolve)
+	}
+
+	// reporter should see notification
+	resNotif, bodyNotif := call(http.MethodGet, "/notifications", reporter, nil, t)
+	if resNotif.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 notifications, got %d body=%+v", resNotif.StatusCode, bodyNotif)
+	}
+	items, _ := bodyNotif["items"].([]any)
+	if len(items) == 0 {
+		t.Fatalf("expected at least one notification for reporter after report resolve")
+	}
+}
+
 func TestAnalyticsAndEmailOpsEndpoints(t *testing.T) {
 	token := makeAdminToken(t)
 	today := time.Now().UTC().Format("2006-01-02")

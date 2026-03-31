@@ -11,12 +11,14 @@ export function OpsSchedulingPage() {
   const [hostId, setHostId] = useState('');
   const [roomId, setRoomId] = useState('');
   const [hosts, setHosts] = useState<Array<Record<string, unknown>>>([]);
+  const [rooms, setRooms] = useState<Array<Record<string, unknown>>>([]);
   const [hostAgenda, setHostAgenda] = useState<Array<Record<string, unknown>>>([]);
   const [roomAgenda, setRoomAgenda] = useState<Array<Record<string, unknown>>>([]);
 
   useEffect(() => {
     if (token) {
       api.listHosts(token).then(r => setHosts(r.items || [])).catch(() => {});
+      api.listRooms(token).then(r => setRooms(r.items || [])).catch(() => {});
     }
   }, [token]);
 
@@ -41,7 +43,12 @@ export function OpsSchedulingPage() {
         <FormControl fullWidth>
           <InputLabel>Room</InputLabel>
           <Select value={roomId} label="Room" onChange={(e) => setRoomId(e.target.value)}>
-            {[1, 2, 3, 4, 5].map(r => <MenuItem key={r} value={String(r)}>Room {r}</MenuItem>)}
+            {rooms.map((r) => (
+              <MenuItem key={String(r.id)} value={String(r.id)}>
+                {String(r.name || `Room ${r.id}`)}
+                {typeof r.chairsCount === 'number' ? ` (${String(r.chairsCount)} chairs)` : ''}
+              </MenuItem>
+            ))}
           </Select>
         </FormControl>
         <Button variant="contained" onClick={() => load()} disabled={!hostId || !roomId}>Load Agendas</Button>

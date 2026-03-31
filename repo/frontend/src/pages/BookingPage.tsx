@@ -23,7 +23,7 @@ export function BookingPage() {
   const { token } = useAuth();
   const [packages, setPackages] = useState<Array<{ id: number; name: string }>>([]);
   const [hosts, setHosts] = useState<Array<{ id: number; username: string }>>([]);
-  const [rooms, setRooms] = useState<Array<{ id: number; name: string }>>([]);
+  const [rooms, setRooms] = useState<Array<{ id: number; name: string; chairsCount?: number }>>([]);
   const [open, setOpen] = useState(false);
   const [holds, setHolds] = useState<Array<Record<string, unknown>>>([]);
   const [history, setHistory] = useState<Array<Record<string, unknown>>>([]);
@@ -34,7 +34,7 @@ export function BookingPage() {
     api.catalog().then((r) => {
       const pkgs = r.items.map((it, idx) => ({ id: Number(it.id ?? idx + 1), name: String(it.name ?? 'Package') }));
       const deduped = Array.from(new Map(pkgs.map((p) => [p.id, p])).values());
-      setPackages(deduped.length ? deduped : [{ id: 1, name: 'Fallback Package' }]);
+      setPackages(deduped);
     });
 
     // Fetch hosts (coaches and clinicians)
@@ -44,15 +44,18 @@ export function BookingPage() {
         setHosts(hosts);
       });
 
-      // Fetch rooms
-      if (token) {
-        api.listRooms(token).then((r) => {
-          const rr = (r.items || []).map((x) => ({ id: Number(x.id || 0), name: String(x.name || 'Room') }));
-          setRooms(rr.length ? rr : [{ id: 1, name: 'Room A' }]);
-        }).catch(() => {
-          setRooms([{ id: 1, name: 'Room A' }, { id: 2, name: 'Room B' }]);
+      api.listRooms(token)
+        .then((r) => {
+          const rr = (r.items || []).map((x) => ({
+            id: Number(x.id || 0),
+            name: String(x.name || 'Room'),
+            chairsCount: Number(x.chairsCount || 0)
+          }));
+          setRooms(rr);
+        })
+        .catch(() => {
+          setRooms([]);
         });
-      }
     }
 
     if (token) {
@@ -60,18 +63,6 @@ export function BookingPage() {
       api.listHistory(token).then((r) => setHistory(r.items || [])).catch(() => {});
     }
   }, [token]);
-
-  const fetchSlots = async (input: { hostId: number; roomId: number; day: string; duration: number }) => {
-    if (!token) return [];
-    const r = await api.availableSlots(token, input);
-    return (r.items || []).map((it) => ({ slotStart: String(it.start || it.slotStart) }));
-  };
-
-  const onSubmitHold = async (payload: any) => {
-    if (!token) return;
-    await api.placeHold(token, payload);
-    setHolds((prev) => [...prev, { ...payload, status: 'held' }]);
-  };
 
   return (
     <Stack spacing={2.5}>

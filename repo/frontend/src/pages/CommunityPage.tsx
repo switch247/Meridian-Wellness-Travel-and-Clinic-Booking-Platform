@@ -46,6 +46,7 @@ export function CommunityPage() {
   const [success, setSuccess] = useState<string | null>(null);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [destinationOptions, setDestinationOptions] = useState<Array<{ id: number; label: string }>>([]);
 
   const isEmpty = useMemo(() => posts.length === 0, [posts]);
 
@@ -71,7 +72,33 @@ export function CommunityPage() {
 
   useEffect(() => {
     loadPosts();
+
+    // Build destination options from backend catalog master data (no hardcoded IDs).
+    api.routes()
+      .then((res) => {
+        const seen = new Set<number>();
+        const opts: Array<{ id: number; label: string }> = [];
+        (res.items || []).forEach((it) => {
+          const id = Number(it.destinationId || 0);
+          if (id > 0 && !seen.has(id)) {
+            seen.add(id);
+            opts.push({ id, label: `Destination #${id}` });
+          }
+        });
+        setDestinationOptions(opts.sort((a, b) => a.id - b.id));
+      })
+      .catch(() => {
+        setDestinationOptions([]);
+      });
   }, [token]);
+
+  const destinationLabelById = useMemo(() => {
+    const map: Record<number, string> = {};
+    destinationOptions.forEach((d) => {
+      map[d.id] = d.label;
+    });
+    return map;
+  }, [destinationOptions]);
 
   const handleSelectPost = async (post: any) => {
     setSelectedPost(post);
@@ -236,7 +263,7 @@ export function CommunityPage() {
 
                           <Stack direction="row" spacing={1.5} alignItems="center">
                             <Chip
-                              label={post.destinationId ? `Dest #${post.destinationId}` : 'General'}
+                              label={post.destinationId ? (destinationLabelById[Number(post.destinationId)] || `Destination #${post.destinationId}`) : 'General'}
                               size="small"
                               variant="outlined"
                               sx={{ height: 22, fontSize: '0.75rem', borderRadius: 1 }}
@@ -298,7 +325,7 @@ export function CommunityPage() {
                       User {selectedPost.authorUserId}
                     </Typography>
                     <Typography variant="caption" color="text.secondary">
-                      {selectedPost.destinationId ? `Destination #${selectedPost.destinationId}` : 'General'}
+                      {selectedPost.destinationId ? (destinationLabelById[Number(selectedPost.destinationId)] || `Destination #${selectedPost.destinationId}`) : 'General'}
                     </Typography>
                   </Box>
                 </Stack>
@@ -430,9 +457,9 @@ export function CommunityPage() {
                 label="Category (optional)"
               >
                 <MenuItem value="">General Discussion</MenuItem>
-                <MenuItem value="1">Destination #1</MenuItem>
-                <MenuItem value="2">Destination #2</MenuItem>
-                <MenuItem value="3">Destination #3</MenuItem>
+                {destinationOptions.map((d) => (
+                  <MenuItem key={d.id} value={String(d.id)}>{d.label}</MenuItem>
+                ))}
               </Select>
             </FormControl>
           </Stack>

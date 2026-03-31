@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -35,9 +36,9 @@ type Config struct {
 func Load() Config {
 	return Config{
 		Port:                 getEnv("PORT", "8443"),
-		DatabaseURL:          getEnv("DATABASE_URL", "postgres://postgres:postgres@db:5432/meridian?sslmode=disable"),
-		JWTSecret:            strings.TrimSpace(os.Getenv("JWT_SECRET")),
-		EncryptionKey:        strings.TrimSpace(os.Getenv("ENCRYPTION_KEY")),
+		DatabaseURL:          getEnv("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/meridian?sslmode=disable"),
+		JWTSecret:            strings.TrimSpace(getEnv("JWT_SECRET", "default-jwt-secret")),
+		EncryptionKey:        strings.TrimSpace(getEnv("ENCRYPTION_KEY", "1234567890abcdef1234567890abcdef")),
 		LockoutThreshold:     getEnvInt("LOCKOUT_THRESHOLD", 5),
 		LockoutDuration:      getEnvDuration("LOCKOUT_DURATION", 15*time.Minute),
 		TokenTTL:             getEnvDuration("TOKEN_TTL", 8*time.Hour),
@@ -45,8 +46,8 @@ func Load() Config {
 		SlotGranularity:      getEnvInt("SLOT_GRANULARITY_MINUTES", 15),
 		AllowedPostalCode:    getEnvCSV("ALLOWED_POSTAL_CODES", []string{"10001", "10002", "10003", "60601", "90001"}),
 		TLSEnabled:           getEnvBool("TLS_ENABLED", true),
-		TLSCertFile:          getEnv("TLS_CERT_FILE", "/certs/server.crt"),
-		TLSKeyFile:           getEnv("TLS_KEY_FILE", "/certs/server.key"),
+		TLSCertFile:          resolveCertPath("TLS_CERT_FILE", "../certs/server.crt"),
+		TLSKeyFile:           resolveCertPath("TLS_KEY_FILE", "../certs/server.key"),
 		AllowedIPs:           getEnvCSV("ALLOWED_IPS", []string{"127.0.0.1", "::1", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"}),
 		TrustProxyHeaders:    getEnvBool("TRUST_PROXY_HEADERS", false),
 		CORSAllowedOrigins:   getEnvCSV("CORS_ALLOWED_ORIGINS", []string{"https://localhost:5173", "https://127.0.0.1:5173", "http://localhost:5173"}),
@@ -55,6 +56,44 @@ func Load() Config {
 		LogMaxBackups:        getEnvInt("LOG_MAX_BACKUPS", 5),
 		ReportWorkerInterval: getEnvDuration("REPORT_WORKER_INTERVAL", 30*time.Second),
 	}
+}
+
+func resolveCertPath(envKey, fallback string) string {
+	// prefer explicit env value
+	v := strings.TrimSpace(os.Getenv(envKey))
+	if v == "" {
+		v = fallback
+	}
+	// if the path exists as given, return it
+	if fileExists(v) {
+		return v
+	}
+	// try common alternative locations relative to cwd
+	name := filepath.Base(v)
+	candidates := []string{
+		filepath.Join(".", "certs", name),
+		filepath.Join("..", "certs", name),
+		filepath.Join("backend", "certs", name),
+		filepath.Join("repo", "backend", "certs", name),
+		filepath.Join("certs", name),
+	}
+	for _, c := range candidates {
+		if fileExists(c) {
+			return c
+		}
+	}
+	// fallback to original value (may be absolute or intended for container)
+	return v
+}
+
+func fileExists(path string) bool {
+	if path == "" {
+		return false
+	}
+	if _, err := os.Stat(path); err == nil {
+		return true
+	}
+	return false
 }
 
 func getEnv(key, fallback string) string {

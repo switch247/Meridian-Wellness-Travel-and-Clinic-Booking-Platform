@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"unicode"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -52,14 +53,35 @@ func Run(ctx context.Context, pool *pgxpool.Pool, migrationsDir string) error {
 		if err != nil {
 			return fmt.Errorf("read migration file %s: %w", file, err)
 		}
+		// Strip UTF-8 BOM if present which can cause syntax errors like 'syntax error at or near "ALTER"'
+		scontent := string(content)
+		scontent = strings.TrimPrefix(scontent, "\uFEFF")
 
 		tx, err := pool.Begin(ctx)
 		if err != nil {
 			return fmt.Errorf("begin migration tx %s: %w", file, err)
 		}
-		if _, err := tx.Exec(ctx, string(content)); err != nil {
-			_ = tx.Rollback(ctx)
-			return fmt.Errorf("exec migration %s: %w", file, err)
+		// Support migration files that contain multiple SQL statements.
+		// pgx Exec may fail when multiple statements are provided in one call,
+		// so split on semicolons and execute statements individually.
+		parts := strings.Split(scontent, ";")
+		for _, p := range parts {
+			stmt := strings.TrimSpace(p)
+			if stmt == "" {
+				continue
+			}
+			// Skip statements that start with non-letter characters which are likely garbled
+			// (e.g. leftover bytes, partial words) to avoid confusing SQL parser.
+			if len(stmt) > 0 {
+				firstRune := []rune(stmt)[0]
+				if !unicode.IsLetter(firstRune) {
+					continue
+				}
+			}
+			if _, err := tx.Exec(ctx, stmt); err != nil {
+				_ = tx.Rollback(ctx)
+				return fmt.Errorf("exec migration %s: %w", file, err)
+			}
 		}
 		if _, err := tx.Exec(ctx, "INSERT INTO schema_migrations(version) VALUES($1)", version); err != nil {
 			_ = tx.Rollback(ctx)

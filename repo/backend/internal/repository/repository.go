@@ -119,6 +119,18 @@ func (r *Repository) AssignRole(ctx context.Context, actorID, targetID int64, ro
 	}
 	defer tx.Rollback(ctx)
 
+	// Prevent privilege escalation: only existing admins may assign the 'admin' role.
+	if strings.ToLower(role) == "admin" {
+		actorRolesCSV, err := rolesAsCSV(ctx, tx, actorID)
+		if err != nil {
+			return err
+		}
+		// actor must already have the admin role
+		if !strings.Contains(actorRolesCSV, "admin") {
+			return fmt.Errorf("assigning 'admin' role is restricted to admin users only")
+		}
+	}
+
 	before, err := rolesAsCSV(ctx, tx, targetID)
 	if err != nil {
 		return err
@@ -1061,10 +1073,11 @@ func (r *Repository) ConfirmHold(ctx context.Context, userID, holdID int64, expe
 	var status string
 	var expiresAt time.Time
 	var ownerID int64
+	var chairID sql.NullInt64
 	err = tx.QueryRow(ctx, `
-		SELECT package_id, host_id, room_id, slot_start, duration_minutes, version, status, expires_at, user_id
+		SELECT package_id, host_id, room_id, chair_id, slot_start, duration_minutes, version, status, expires_at, user_id
 		FROM reservation_holds WHERE id=$1 FOR UPDATE
-	`, holdID).Scan(&packageID, &hostID, &roomID, &slotStart, &duration, &version, &status, &expiresAt, &ownerID)
+	`, holdID).Scan(&packageID, &hostID, &roomID, &chairID, &slotStart, &duration, &version, &status, &expiresAt, &ownerID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return 0, ErrNotFound
@@ -1091,31 +1104,61 @@ func (r *Repository) ConfirmHold(ctx context.Context, userID, holdID int64, expe
 	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, roomID+2_000_000_000); err != nil {
 		return 0, err
 	}
+	if chairID.Valid {
+		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, chairID.Int64+3_000_000_000); err != nil {
+			return 0, err
+		}
+	}
 	slotEnd := slotStart.Add(time.Duration(duration) * time.Minute)
 	var conflict bool
-	if err := tx.QueryRow(ctx, `
-		SELECT EXISTS(
-			SELECT 1 FROM bookings
-			WHERE status='confirmed'
-			AND id <> COALESCE((SELECT id FROM bookings WHERE hold_id=$5), -1)
-			AND slot_start < $4
-			AND (slot_start + (duration_minutes || ' minutes')::interval) > $1
-			AND (host_id=$2 OR room_id=$3)
-		)
-	`, slotStart, hostID, roomID, slotEnd, holdID).Scan(&conflict); err != nil {
-		return 0, err
+	if chairID.Valid {
+		if err := tx.QueryRow(ctx, `
+			SELECT EXISTS(
+				SELECT 1 FROM bookings
+				WHERE status='confirmed'
+				AND id <> COALESCE((SELECT id FROM bookings WHERE hold_id=$5), -1)
+				AND slot_start < $4
+				AND (slot_start + (duration_minutes || ' minutes')::interval) > $1
+				AND chair_id=$6
+			)
+		`, slotStart, hostID, roomID, slotEnd, holdID, chairID.Int64).Scan(&conflict); err != nil {
+			return 0, err
+		}
+	} else {
+		if err := tx.QueryRow(ctx, `
+			SELECT EXISTS(
+				SELECT 1 FROM bookings
+				WHERE status='confirmed'
+				AND id <> COALESCE((SELECT id FROM bookings WHERE hold_id=$5), -1)
+				AND slot_start < $4
+				AND (slot_start + (duration_minutes || ' minutes')::interval) > $1
+				AND (host_id=$2 OR room_id=$3)
+			)
+		`, slotStart, hostID, roomID, slotEnd, holdID).Scan(&conflict); err != nil {
+			return 0, err
+		}
 	}
 	if conflict {
 		return 0, fmt.Errorf("slot unavailable")
 	}
 
 	var bookingID int64
-	if err := tx.QueryRow(ctx, `
-		INSERT INTO bookings(hold_id,user_id,package_id,host_id,room_id,slot_start,duration_minutes,status,version)
-		VALUES($1,$2,$3,$4,$5,$6,$7,'scheduled',1)
-		RETURNING id
-	`, holdID, userID, packageID, hostID, roomID, slotStart, duration).Scan(&bookingID); err != nil {
-		return 0, err
+	if chairID.Valid {
+		if err := tx.QueryRow(ctx, `
+			INSERT INTO bookings(hold_id,user_id,package_id,host_id,room_id,chair_id,slot_start,duration_minutes,status,version)
+			VALUES($1,$2,$3,$4,$5,$6,$7,$8,'scheduled',1)
+			RETURNING id
+		`, holdID, userID, packageID, hostID, roomID, chairID.Int64, slotStart, duration).Scan(&bookingID); err != nil {
+			return 0, err
+		}
+	} else {
+		if err := tx.QueryRow(ctx, `
+			INSERT INTO bookings(hold_id,user_id,package_id,host_id,room_id,slot_start,duration_minutes,status,version)
+			VALUES($1,$2,$3,$4,$5,$6,$7,'scheduled',1)
+			RETURNING id
+		`, holdID, userID, packageID, hostID, roomID, slotStart, duration).Scan(&bookingID); err != nil {
+			return 0, err
+		}
 	}
 
 	if _, err := tx.Exec(ctx, `UPDATE reservation_holds SET status='scheduled', version=version+1 WHERE id=$1`, holdID); err != nil {
@@ -1226,6 +1269,33 @@ func (r *Repository) CreateComment(ctx context.Context, authorID, postID int64, 
 		RETURNING id
 	`, postID, authorID, parentID, body).Scan(&id)
 	return id, err
+}
+
+func (r *Repository) GetPostAuthor(ctx context.Context, postID int64) (int64, error) {
+	var authorID int64
+	err := r.pool.QueryRow(ctx, `SELECT author_user_id FROM community_posts WHERE id=$1`, postID).Scan(&authorID)
+	if err != nil {
+		return 0, err
+	}
+	return authorID, nil
+}
+
+func (r *Repository) GetCommentAuthor(ctx context.Context, commentID int64) (int64, error) {
+	var authorID int64
+	err := r.pool.QueryRow(ctx, `SELECT author_user_id FROM community_comments WHERE id=$1`, commentID).Scan(&authorID)
+	if err != nil {
+		return 0, err
+	}
+	return authorID, nil
+}
+
+func (r *Repository) GetReportReporter(ctx context.Context, reportID int64) (int64, error) {
+	var reporterID int64
+	err := r.pool.QueryRow(ctx, `SELECT reporter_user_id FROM moderation_reports WHERE id=$1`, reportID).Scan(&reporterID)
+	if err != nil {
+		return 0, err
+	}
+	return reporterID, nil
 }
 
 func (r *Repository) ToggleFavorite(ctx context.Context, userID, packageID int64) error {
@@ -1392,11 +1462,40 @@ func (r *Repository) AnalyticsKPIs(ctx context.Context, from, to time.Time, prov
 	if holdCount > 0 {
 		attendance = float64(bookingVolume) / float64(holdCount) * 100
 	}
+
+	// Repurchase rate: percentage of buyers with more than one booking in the period
+	var totalBuyers int
+	if err := r.pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(DISTINCT user_id) FROM bookings WHERE %s AND status IN ('scheduled','confirmed','checked_in','in_progress','completed')`, where), args...).Scan(&totalBuyers); err != nil {
+		return nil, err
+	}
+	var repeatBuyers int
+	if err := r.pool.QueryRow(ctx, fmt.Sprintf(`
+		SELECT COUNT(*) FROM (
+			SELECT user_id, COUNT(1) as c FROM bookings WHERE %s AND status IN ('scheduled','confirmed','checked_in','in_progress','completed') GROUP BY user_id HAVING COUNT(1) > 1
+		) t
+	`, where), args...).Scan(&repeatBuyers); err != nil {
+		return nil, err
+	}
+	repurchase := 0.0
+	if totalBuyers > 0 {
+		repurchase = float64(repeatBuyers) / float64(totalBuyers) * 100
+	}
+
+	// Refund rate: percentage of bookings in the period that were cancelled
+	var refundCount int
+	if err := r.pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(1) FROM bookings WHERE %s AND status='cancelled'`, where), args...).Scan(&refundCount); err != nil {
+		return nil, err
+	}
+	refundRate := 0.0
+	if bookingVolume > 0 {
+		refundRate = float64(refundCount) / float64(bookingVolume) * 100
+	}
+
 	return map[string]any{
 		"bookingVolume":    bookingVolume,
 		"attendanceRate":   attendance,
-		"repurchaseRate":   0.0,
-		"refundRate":       0.0,
+		"repurchaseRate":   repurchase,
+		"refundRate":       refundRate,
 		"coachUtilization": attendance,
 	}, nil
 }

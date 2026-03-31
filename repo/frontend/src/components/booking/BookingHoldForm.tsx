@@ -1,5 +1,5 @@
 import { Alert, Button, Chip, MenuItem, Paper, Stack, TextField, Typography } from '@mui/material';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 export type BookingPayload = {
   packageId: number;
@@ -20,12 +20,12 @@ export function BookingHoldForm({
   packages: Array<{ id: number; name: string }>;
   fetchSlots: (input: { hostId: number; roomId: number; day: string; duration: number }) => Promise<Array<{ slotStart: string }>>;
   hosts: Array<{ id: number; username: string }>;
-  rooms: Array<{ id: number; name: string }>;
+  rooms: Array<{ id: number; name: string; chairsCount?: number }>;
 }) {
   const [payload, setPayload] = useState<BookingPayload>({
-    packageId: packages[0]?.id || 1,
-    hostId: hosts[0]?.id || 1,
-    roomId: rooms[0]?.id || 1,
+    packageId: packages[0]?.id || 0,
+    hostId: hosts[0]?.id || 0,
+    roomId: rooms[0]?.id || 0,
     slotStart: new Date(Date.now() + 3600000).toISOString().slice(0, 16), // 1 hour from now 
     duration: 45
   });
@@ -35,7 +35,19 @@ export function BookingHoldForm({
   const [slots, setSlots] = useState<Array<{ slotStart: string }>>([]);
   const [slotsLoading, setSlotsLoading] = useState(false);
 
-  const minTime = useMemo(() => new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 16), []);
+  const minTime = useMemo(() => new Date(Date.now() + 60 * 60 * 1000).toISOString().slice(0, 16), []);
+
+  const canLoadSlots = payload.hostId > 0 && payload.roomId > 0;
+  const canSubmit = payload.packageId > 0 && payload.hostId > 0 && payload.roomId > 0;
+
+  useEffect(() => {
+    setPayload((prev) => ({
+      ...prev,
+      packageId: prev.packageId > 0 ? prev.packageId : (packages[0]?.id || 0),
+      hostId: prev.hostId > 0 ? prev.hostId : (hosts[0]?.id || 0),
+      roomId: prev.roomId > 0 ? prev.roomId : (rooms[0]?.id || 0)
+    }));
+  }, [packages, hosts, rooms]);
 
   return (
     <Paper sx={{ p: 2.5 }}>
@@ -72,7 +84,9 @@ export function BookingHoldForm({
             fullWidth
           >
             {rooms.map((room) => (
-              <MenuItem key={room.id} value={room.id}>{room.name}</MenuItem>
+              <MenuItem key={room.id} value={room.id}>
+                {room.name}{typeof room.chairsCount === 'number' ? ` (${room.chairsCount} chairs)` : ''}
+              </MenuItem>
             ))}
           </TextField>
         </Stack>
@@ -85,7 +99,7 @@ export function BookingHoldForm({
         />
         <Button
           variant="outlined"
-          disabled={slotsLoading}
+          disabled={slotsLoading || !canLoadSlots}
           onClick={async () => {
             setSlotsLoading(true);
             try {
@@ -140,7 +154,7 @@ export function BookingHoldForm({
         </TextField>
         <Button
           variant="contained"
-          disabled={loading}
+          disabled={loading || !canSubmit}
           onClick={async () => {
             setLoading(true);
             setError(null);

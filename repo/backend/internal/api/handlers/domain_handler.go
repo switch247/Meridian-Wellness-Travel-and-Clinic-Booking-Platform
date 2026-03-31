@@ -207,6 +207,24 @@ func (h *DomainHandler) ListHolds(c echo.Context) error {
 	if !ok {
 		return response.JSONError(c, http.StatusUnauthorized, "missing user context")
 	}
+	// Allow privileged roles to request holds for a specific user via query param `userId`.
+	userParam := c.QueryParam("userId")
+	if userParam != "" {
+		// parse and authorize
+		reqID, err := optionalInt64(userParam)
+		if err != nil || reqID == nil || *reqID <= 0 {
+			return response.JSONError(c, http.StatusBadRequest, "invalid userId")
+		}
+		// only privileged roles may request other user's holds
+		if !middleware.HasAnyRole(c, "operations", "admin", "coach", "clinician") {
+			return response.JSONError(c, http.StatusForbidden, "insufficient permission")
+		}
+		items, err := h.repo.ListHoldsByUser(c.Request().Context(), *reqID)
+		if err != nil {
+			return response.JSONError(c, http.StatusInternalServerError, err.Error())
+		}
+		return c.JSON(http.StatusOK, map[string]any{"items": items})
+	}
 	items, err := h.repo.ListHoldsByUser(c.Request().Context(), uid)
 	if err != nil {
 		return response.JSONError(c, http.StatusInternalServerError, err.Error())
@@ -218,6 +236,22 @@ func (h *DomainHandler) ListBookingHistory(c echo.Context) error {
 	uid, ok := middleware.UserID(c)
 	if !ok {
 		return response.JSONError(c, http.StatusUnauthorized, "missing user context")
+	}
+	// Allow privileged roles to request booking history for a specific user via `userId`.
+	userParam := c.QueryParam("userId")
+	if userParam != "" {
+		reqID, err := optionalInt64(userParam)
+		if err != nil || reqID == nil || *reqID <= 0 {
+			return response.JSONError(c, http.StatusBadRequest, "invalid userId")
+		}
+		if !middleware.HasAnyRole(c, "operations", "admin", "coach", "clinician") {
+			return response.JSONError(c, http.StatusForbidden, "insufficient permission")
+		}
+		items, err := h.repo.ListBookingHistoryByUser(c.Request().Context(), *reqID)
+		if err != nil {
+			return response.JSONError(c, http.StatusInternalServerError, err.Error())
+		}
+		return c.JSON(http.StatusOK, map[string]any{"items": items})
 	}
 	items, err := h.repo.ListBookingHistoryByUser(c.Request().Context(), uid)
 	if err != nil {
@@ -707,6 +741,25 @@ func (h *DomainHandler) CreateComment(c echo.Context) error {
 	if err != nil {
 		return response.JSONError(c, http.StatusBadRequest, err.Error())
 	}
+
+	// Emit notifications: notify post author and parent comment author (if applicable),
+	// but do not notify the comment author themselves.
+	// Notify post author
+	if postAuthor, err := h.repo.GetPostAuthor(c.Request().Context(), postID); err == nil {
+		if postAuthor != uid {
+			_ = h.repo.CreateNotification(c.Request().Context(), postAuthor, "community", "New comment", req.Body, "post", &postID)
+		}
+	}
+	// Notify parent comment author (reply)
+	if req.ParentCommentID != nil {
+		if parentAuthor, err := h.repo.GetCommentAuthor(c.Request().Context(), *req.ParentCommentID); err == nil {
+			if parentAuthor != uid {
+				// Use comment as related type
+				_ = h.repo.CreateNotification(c.Request().Context(), parentAuthor, "community", "Reply to your comment", req.Body, "comment", &id)
+			}
+		}
+	}
+
 	return c.JSON(http.StatusCreated, map[string]any{"id": id})
 }
 
@@ -826,6 +879,17 @@ func (h *DomainHandler) ResolveReport(c echo.Context) error {
 	if err := h.repo.ResolveReport(c.Request().Context(), reportID, uid, req.Status, req.Outcome); err != nil {
 		return response.JSONError(c, http.StatusBadRequest, err.Error())
 	}
+
+	// Notify the original reporter that the report was resolved.
+	if reporterID, err := h.repo.GetReportReporter(c.Request().Context(), reportID); err == nil {
+		// outcome text may be empty; use status as fallback
+		body := req.Outcome
+		if body == "" {
+			body = "Report " + req.Status
+		}
+		_ = h.repo.CreateNotification(c.Request().Context(), reporterID, "moderation", "Report resolved", body, "report", &reportID)
+	}
+
 	return c.JSON(http.StatusOK, map[string]any{"status": "ok"})
 }
 

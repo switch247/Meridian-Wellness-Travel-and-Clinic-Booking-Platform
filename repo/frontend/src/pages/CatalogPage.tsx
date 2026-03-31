@@ -141,7 +141,7 @@ export function CatalogPage() {
   const [bookDialogOpen, setBookDialogOpen] = useState(false);
   const [selectedPackage, setSelectedPackage] = useState<CatalogRow | null>(null);
   const [hosts, setHosts] = useState<Array<{ id: number; username: string }>>([]);
-  const [rooms, setRooms] = useState<Array<{ id: number; name: string }>>([]);
+  const [rooms, setRooms] = useState<Array<{ id: number; name: string; chairsCount?: number }>>([]);
   const [successAlert, setSuccessAlert] = useState(false);
 
   // Filtering and pagination state
@@ -178,8 +178,18 @@ export function CatalogPage() {
         const hosts = (r.items || []).map((u) => ({ id: Number(u.id), username: String(u.username) }));
         setHosts(hosts);
       });
-      // Mock rooms for now
-      setRooms([{ id: 1, name: 'Room A' }, { id: 2, name: 'Room B' }]);
+      api.listRooms(token)
+        .then((r) => {
+          const rr = (r.items || []).map((x) => ({
+            id: Number(x.id || 0),
+            name: String(x.name || 'Room'),
+            chairsCount: Number(x.chairsCount || 0)
+          }));
+          setRooms(rr);
+        })
+        .catch(() => {
+          setRooms([]);
+        });
     }
   }, [token]);
 
