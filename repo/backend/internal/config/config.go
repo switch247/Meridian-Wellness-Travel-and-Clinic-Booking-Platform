@@ -137,7 +137,7 @@ func (c Config) ValidateSecurityKeys() error {
 		return fmt.Errorf("security keys must be provided via environment variables")
 	}
 	// reject obvious development defaults
-	if c.JWTSecret == "default-jwt-secret" {
+	if c.JWTSecret == "default-jwt-secret-zzz" {
 		return fmt.Errorf("jwt secret is set to default insecure value; set JWT_SECRET in environment")
 	}
 	if len(c.EncryptionKey) < 32 {
