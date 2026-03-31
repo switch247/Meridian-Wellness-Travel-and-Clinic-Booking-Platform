@@ -15,7 +15,7 @@ type AuthContextValue = {
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [token, setToken] = useState<string | null>(() => localStorage.getItem('token'));
+  const [token, setToken] = useState<string | null>(null);
   const [me, setMe] = useState<MeResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -29,7 +29,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       .then(setMe)
       .catch((err: Error) => {
         setError(err.message);
-        localStorage.removeItem('token');
         setToken(null);
       });
   }, [token]);
@@ -38,7 +37,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setLoading(true);
     try {
       const out = await api.login({ username, password });
-      localStorage.setItem('token', out.token);
       setToken(out.token);
       const profile = await api.me(out.token);
       setMe(profile);
@@ -63,7 +61,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   function logout() {
-    localStorage.removeItem('token');
     setToken(null);
     setMe(null);
   }

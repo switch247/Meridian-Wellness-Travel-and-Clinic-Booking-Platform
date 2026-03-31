@@ -4,7 +4,7 @@ import { api } from '../api/client';
 import { LoginCard } from '../components/LoginCard';
 
 export function HomePage() {
-  const [token, setToken] = useState<string | null>(() => localStorage.getItem('token'));
+  const [token, setToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [me, setMe] = useState<{ id: number; username: string; roles: string[]; phone: string; address: string } | null>(null);
@@ -25,8 +25,7 @@ export function HomePage() {
       .then(setMe)
       .catch((e: Error) => {
         setError(e.message);
-        setToken(null);
-        localStorage.removeItem('token');
+        if ((e as Error).message.includes('token')) setToken(null);
       });
   }, [token]);
 
@@ -35,7 +34,6 @@ export function HomePage() {
     setError(null);
     try {
       const result = await api.login(value);
-      localStorage.setItem('token', result.token);
       setToken(result.token);
     } catch (e) {
       setError((e as Error).message);

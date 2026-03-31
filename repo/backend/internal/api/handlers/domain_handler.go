@@ -164,6 +164,7 @@ type holdRequest struct {
 	PackageID int64  `json:"packageId"`
 	HostID    int64  `json:"hostId"`
 	RoomID    int64  `json:"roomId"`
+	ChairID   *int64 `json:"chairId"`
 	SlotStart string `json:"slotStart"`
 	Duration  int    `json:"duration"`
 }
@@ -178,6 +179,9 @@ func (h *DomainHandler) PlaceHold(c echo.Context) error {
 		if r.PackageID <= 0 || r.HostID <= 0 || r.RoomID <= 0 || r.SlotStart == "" {
 			return echo.NewHTTPError(http.StatusBadRequest, "packageId, hostId, roomId, slotStart required")
 		}
+		if r.ChairID != nil && *r.ChairID <= 0 {
+			return echo.NewHTTPError(http.StatusBadRequest, "invalid chairId")
+		}
 		return nil
 	}); err != nil {
 		return err
@@ -186,7 +190,7 @@ func (h *DomainHandler) PlaceHold(c echo.Context) error {
 	if err != nil {
 		return response.JSONError(c, http.StatusBadRequest, "slotStart must be RFC3339")
 	}
-	out, err := h.booking.PlaceHold(c.Request().Context(), uid, req.PackageID, req.HostID, req.RoomID, t, req.Duration)
+	out, err := h.booking.PlaceHold(c.Request().Context(), uid, req.PackageID, req.HostID, req.RoomID, req.ChairID, t, req.Duration)
 	if err != nil {
 		switch {
 		case errors.Is(err, repository.ErrAddressRequired):
@@ -350,6 +354,18 @@ func (h *DomainHandler) ListHosts(c echo.Context) error {
 
 func (h *DomainHandler) ListRooms(c echo.Context) error {
 	items, err := h.repo.ListRooms(c.Request().Context())
+	if err != nil {
+		return response.JSONError(c, http.StatusInternalServerError, err.Error())
+	}
+	return c.JSON(http.StatusOK, map[string]any{"items": items})
+}
+
+func (h *DomainHandler) ListRoomChairs(c echo.Context) error {
+	roomID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || roomID <= 0 {
+		return response.JSONError(c, http.StatusBadRequest, "invalid room id")
+	}
+	items, err := h.repo.GetChairsByRoom(c.Request().Context(), roomID)
 	if err != nil {
 		return response.JSONError(c, http.StatusInternalServerError, err.Error())
 	}
@@ -626,7 +642,11 @@ func (h *DomainHandler) AvailableSlots(c echo.Context) error {
 	if err != nil || (duration != 30 && duration != 45 && duration != 60) {
 		return response.JSONError(c, http.StatusBadRequest, "duration must be 30/45/60")
 	}
-	items, err := h.repo.ListAvailableSlots(c.Request().Context(), hostID, roomID, day, duration, h.slotGranularity)
+	chairID, err := optionalInt64(c.QueryParam("chairId"))
+	if err != nil {
+		return response.JSONError(c, http.StatusBadRequest, "invalid chairId")
+	}
+	items, err := h.repo.ListAvailableSlots(c.Request().Context(), hostID, roomID, chairID, day, duration, h.slotGranularity)
 	if err != nil {
 		return response.JSONError(c, http.StatusInternalServerError, err.Error())
 	}

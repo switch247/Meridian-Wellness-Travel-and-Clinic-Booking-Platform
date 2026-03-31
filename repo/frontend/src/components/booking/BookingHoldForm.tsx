@@ -5,6 +5,7 @@ export type BookingPayload = {
   packageId: number;
   hostId: number;
   roomId: number;
+  chairId?: number;
   slotStart: string;
   duration: number;
 };
@@ -13,12 +14,14 @@ export function BookingHoldForm({
   onSubmit,
   packages,
   fetchSlots,
+  fetchChairs,
   hosts,
   rooms
 }: {
   onSubmit: (payload: BookingPayload) => Promise<void>;
   packages: Array<{ id: number; name: string }>;
-  fetchSlots: (input: { hostId: number; roomId: number; day: string; duration: number }) => Promise<Array<{ slotStart: string }>>;
+  fetchSlots: (input: { hostId: number; roomId: number; chairId?: number; day: string; duration: number }) => Promise<Array<{ slotStart: string }>>;
+  fetchChairs: (roomId: number) => Promise<Array<{ id: number; name: string }>>;
   hosts: Array<{ id: number; username: string }>;
   rooms: Array<{ id: number; name: string; chairsCount?: number }>;
 }) {
@@ -34,11 +37,14 @@ export function BookingHoldForm({
   const [loading, setLoading] = useState(false);
   const [slots, setSlots] = useState<Array<{ slotStart: string }>>([]);
   const [slotsLoading, setSlotsLoading] = useState(false);
+  const [chairs, setChairs] = useState<Array<{ id: number; name: string }>>([]);
+  const [chairsLoading, setChairsLoading] = useState(false);
 
   const minTime = useMemo(() => new Date(Date.now() + 60 * 60 * 1000).toISOString().slice(0, 16), []);
 
-  const canLoadSlots = payload.hostId > 0 && payload.roomId > 0;
-  const canSubmit = payload.packageId > 0 && payload.hostId > 0 && payload.roomId > 0;
+  const requiresChair = chairs.length > 0;
+  const canLoadSlots = payload.hostId > 0 && payload.roomId > 0 && (!requiresChair || Number(payload.chairId) > 0);
+  const canSubmit = payload.packageId > 0 && payload.hostId > 0 && payload.roomId > 0 && (!requiresChair || Number(payload.chairId) > 0);
 
   useEffect(() => {
     setPayload((prev) => ({
@@ -48,6 +54,28 @@ export function BookingHoldForm({
       roomId: prev.roomId > 0 ? prev.roomId : (rooms[0]?.id || 0)
     }));
   }, [packages, hosts, rooms]);
+
+  useEffect(() => {
+    if (payload.roomId <= 0) {
+      setChairs([]);
+      setPayload((prev) => ({ ...prev, chairId: undefined }));
+      return;
+    }
+    setChairsLoading(true);
+    fetchChairs(payload.roomId)
+      .then((items) => {
+        setChairs(items);
+        setPayload((prev) => ({
+          ...prev,
+          chairId: items.length > 0 ? (prev.chairId && items.some((c) => c.id === prev.chairId) ? prev.chairId : items[0].id) : undefined
+        }));
+      })
+      .catch(() => {
+        setChairs([]);
+        setPayload((prev) => ({ ...prev, chairId: undefined }));
+      })
+      .finally(() => setChairsLoading(false));
+  }, [payload.roomId]);
 
   return (
     <Paper sx={{ p: 2.5 }}>
@@ -91,6 +119,22 @@ export function BookingHoldForm({
           </TextField>
         </Stack>
         <TextField
+          select
+          label="Chair"
+          value={payload.chairId ?? ''}
+          onChange={(e) => setPayload((p) => ({ ...p, chairId: e.target.value ? Number(e.target.value) : undefined }))}
+          disabled={chairsLoading || chairs.length === 0}
+          helperText={chairs.length === 0 ? 'No explicit chair records for this room.' : 'Select chair for chair-level conflict checks.'}
+        >
+          {chairs.length === 0 ? (
+            <MenuItem value="">No chairs available</MenuItem>
+          ) : (
+            chairs.map((chair) => (
+              <MenuItem key={chair.id} value={chair.id}>{chair.name}</MenuItem>
+            ))
+          )}
+        </TextField>
+        <TextField
           label="Slot Start"
           type="datetime-local"
           value={payload.slotStart}
@@ -104,7 +148,7 @@ export function BookingHoldForm({
             setSlotsLoading(true);
             try {
               const day = payload.slotStart.slice(0, 10);
-              const available = await fetchSlots({ hostId: payload.hostId, roomId: payload.roomId, day, duration: payload.duration });
+              const available = await fetchSlots({ hostId: payload.hostId, roomId: payload.roomId, chairId: payload.chairId, day, duration: payload.duration });
               setSlots(available);
               if (available[0]?.slotStart) {
                 setPayload((p) => ({ ...p, slotStart: new Date(available[0].slotStart).toISOString().slice(0, 16) }));

@@ -37,7 +37,7 @@ export const api = {
   deleteContact: (token: string, id: number) => request(`/profile/contacts/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } }),
   placeHold: (
     token: string,
-    payload: { packageId: number; hostId: number; roomId: number; slotStart: string; duration: number }
+    payload: { packageId: number; hostId: number; roomId: number; chairId?: number; slotStart: string; duration: number }
   ) => request('/bookings/holds', { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(payload) }),
   listHolds: (token: string) => request<{ items: Array<Record<string, unknown>> }>('/bookings/holds', { headers: { Authorization: `Bearer ${token}` } }),
   listHistory: (token: string) => request<{ items: Array<Record<string, unknown>> }>('/bookings/history', { headers: { Authorization: `Bearer ${token}` } }),
@@ -53,10 +53,11 @@ export const api = {
   routes: () => request<{ items: Array<Record<string, unknown>> }>('/catalog/routes'),
   hotels: () => request<{ items: Array<Record<string, unknown>> }>('/catalog/hotels'),
   attractions: () => request<{ items: Array<Record<string, unknown>> }>('/catalog/attractions'),
-  availableSlots: (token: string, q: { hostId: number; roomId: number; day: string; duration: number }) =>
-    request<{ items: Array<Record<string, unknown>> }>(`/scheduling/slots?hostId=${q.hostId}&roomId=${q.roomId}&day=${encodeURIComponent(q.day)}&duration=${q.duration}`, { headers: { Authorization: `Bearer ${token}` } }),
+  availableSlots: (token: string, q: { hostId: number; roomId: number; chairId?: number; day: string; duration: number }) =>
+    request<{ items: Array<Record<string, unknown>> }>(`/scheduling/slots?hostId=${q.hostId}&roomId=${q.roomId}${q.chairId ? `&chairId=${q.chairId}` : ''}&day=${encodeURIComponent(q.day)}&duration=${q.duration}`, { headers: { Authorization: `Bearer ${token}` } }),
   listHosts: (token: string) => request<{ items: Array<Record<string, unknown>> }>('/scheduling/hosts', { headers: { Authorization: `Bearer ${token}` } }),
   listRooms: (token: string) => request<{ items: Array<Record<string, unknown>> }>('/scheduling/rooms', { headers: { Authorization: `Bearer ${token}` } }),
+  listRoomChairs: (token: string, roomId: number) => request<{ items: Array<Record<string, unknown>> }>(`/scheduling/rooms/${roomId}/chairs`, { headers: { Authorization: `Bearer ${token}` } }),
   confirmHold: (token: string, payload: { holdId: number; version?: number }) =>
     request('/bookings/confirm', { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(payload) }),
   updateBookingStatus: (token: string, bookingId: number, payload: { status: string; notes?: string }) =>

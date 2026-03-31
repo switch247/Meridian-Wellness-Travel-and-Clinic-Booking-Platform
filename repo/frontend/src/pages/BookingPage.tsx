@@ -77,6 +77,11 @@ export function BookingPage() {
               packages={packages}
               hosts={hosts}
               rooms={rooms}
+              fetchChairs={async (roomId) => {
+                if (!token) return [];
+                const out = await api.listRoomChairs(token, roomId);
+                return (out.items || []).map((i) => ({ id: Number(i.id), name: String(i.name || `Chair ${i.id}`) }));
+              }}
               fetchSlots={async (input) => {
                 if (!token) return [];
                 const out = await api.availableSlots(token, input);
@@ -125,7 +130,7 @@ export function BookingPage() {
               holds.map((h, idx) => (
                 <Box key={`hold-${idx}`} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1, p: 1.2 }}>
                   <Typography variant="body2">
-                    #{String(h.id)} · Package {String(h.packageId)} · {String(h.status)} · Slot {new Date(String(h.slotStart || '')).toLocaleString()}
+                    #{String(h.id)} · Package {String(h.packageId)} · Chair {String(h.chairId ?? '-') } · {String(h.status)} · Slot {new Date(String(h.slotStart || '')).toLocaleString()}
                   </Typography>
                 </Box>
               ))

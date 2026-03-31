@@ -56,7 +56,7 @@ var PermissionRoles = map[string][]string{
 	PermTravelerBookingHist:    {"traveler", "coach", "clinician", "operations", "admin"},
 	PermTravelerAddressDelete:  {"traveler"},
 	PermTravelerBookingCancel:  {"traveler"},
-	PermAdminRoleAssign:        {"operations", "admin"},
+	PermAdminRoleAssign:        {"admin"},
 	PermAdminUsersRead:         {"operations", "admin"},
 	PermAdminAuditsRead:        {"operations", "admin"},
 	PermHostAgendaRead:         {"coach", "clinician", "operations", "admin"},

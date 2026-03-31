@@ -115,7 +115,7 @@ func NewBookingService(repo *repository.Repository, cfg config.Config) *BookingS
 	return &BookingService{repo: repo, cfg: cfg}
 }
 
-func (s *BookingService) PlaceHold(ctx context.Context, userID, packageID, hostID, roomID int64, slotStart time.Time, duration int) (map[string]any, error) {
+func (s *BookingService) PlaceHold(ctx context.Context, userID, packageID, hostID, roomID int64, chairID *int64, slotStart time.Time, duration int) (map[string]any, error) {
 	if duration != 30 && duration != 45 && duration != 60 {
 		return nil, fmt.Errorf("duration must be one of 30,45,60")
 	}
@@ -126,7 +126,7 @@ func (s *BookingService) PlaceHold(ctx context.Context, userID, packageID, hostI
 		return nil, err
 	}
 	expires := time.Now().Add(s.cfg.ReservationHold)
-	holdID, version, err := s.repo.CreateReservationHold(ctx, userID, packageID, hostID, roomID, slotStart, duration, expires)
+	holdID, version, err := s.repo.CreateReservationHoldWithChair(ctx, userID, packageID, hostID, roomID, chairID, slotStart, duration, expires)
 	if err != nil {
 		return nil, err
 	}

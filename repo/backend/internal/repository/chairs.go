@@ -107,7 +107,7 @@ func (r *Repository) CreateReservationHoldWithChair(ctx context.Context, userID,
                 WHERE status='active' AND expires_at > NOW()
                 AND slot_start < $3
                 AND (slot_start + (duration_minutes || ' minutes')::interval) > $1
-                AND chair_id=$4
+				AND (host_id=$2 OR chair_id=$4)
             )
         `, slotStart, hostID, slotEnd, *chairID).Scan(&conflict)
 		if err != nil {
@@ -122,7 +122,7 @@ func (r *Repository) CreateReservationHoldWithChair(ctx context.Context, userID,
                 WHERE status='confirmed'
                 AND slot_start < $3
                 AND (slot_start + (duration_minutes || ' minutes')::interval) > $1
-                AND chair_id=$4
+				AND (host_id=$2 OR chair_id=$4)
             )
         `, slotStart, hostID, slotEnd, *chairID).Scan(&conflict); err != nil {
 			return 0, 0, err

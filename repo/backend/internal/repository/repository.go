@@ -965,7 +965,7 @@ func (r *Repository) listRichCatalogByTable(ctx context.Context, table string) (
 	return items, rows.Err()
 }
 
-func (r *Repository) ListAvailableSlots(ctx context.Context, hostID, roomID int64, day time.Time, duration int, granularity int) ([]map[string]any, error) {
+func (r *Repository) ListAvailableSlots(ctx context.Context, hostID, roomID int64, chairID *int64, day time.Time, duration int, granularity int) ([]map[string]any, error) {
 	if err := r.ReleaseExpiredHolds(ctx); err != nil {
 		return nil, err
 	}
@@ -1024,29 +1024,57 @@ func (r *Repository) ListAvailableSlots(ctx context.Context, hostID, roomID int6
 	for t := start; t.Add(block).Before(end) || t.Add(block).Equal(end); t = t.Add(step) {
 		var conflict bool
 		candidateEnd := t.Add(block)
-		if err := r.pool.QueryRow(ctx, `
-			SELECT EXISTS(
-				SELECT 1 FROM reservation_holds
-				WHERE status='active'
-				AND expires_at > NOW()
-				AND slot_start < $4
-				AND (slot_start + (duration_minutes || ' minutes')::interval) > $1
-				AND (host_id=$2 OR room_id=$3)
-			)
-		`, t, hostID, roomID, candidateEnd).Scan(&conflict); err != nil {
-			return nil, err
-		}
-		if !conflict {
+		if chairID != nil {
 			if err := r.pool.QueryRow(ctx, `
 				SELECT EXISTS(
-					SELECT 1 FROM bookings
-					WHERE status='confirmed'
+					SELECT 1 FROM reservation_holds
+					WHERE status='active'
+					AND expires_at > NOW()
+					AND slot_start < $4
+					AND (slot_start + (duration_minutes || ' minutes')::interval) > $1
+					AND (host_id=$2 OR chair_id=$5)
+				)
+			`, t, hostID, roomID, candidateEnd, *chairID).Scan(&conflict); err != nil {
+				return nil, err
+			}
+			if !conflict {
+				if err := r.pool.QueryRow(ctx, `
+					SELECT EXISTS(
+						SELECT 1 FROM bookings
+						WHERE status='confirmed'
+						AND slot_start < $4
+						AND (slot_start + (duration_minutes || ' minutes')::interval) > $1
+						AND (host_id=$2 OR chair_id=$5)
+					)
+				`, t, hostID, roomID, candidateEnd, *chairID).Scan(&conflict); err != nil {
+					return nil, err
+				}
+			}
+		} else {
+			if err := r.pool.QueryRow(ctx, `
+				SELECT EXISTS(
+					SELECT 1 FROM reservation_holds
+					WHERE status='active'
+					AND expires_at > NOW()
 					AND slot_start < $4
 					AND (slot_start + (duration_minutes || ' minutes')::interval) > $1
 					AND (host_id=$2 OR room_id=$3)
 				)
 			`, t, hostID, roomID, candidateEnd).Scan(&conflict); err != nil {
 				return nil, err
+			}
+			if !conflict {
+				if err := r.pool.QueryRow(ctx, `
+					SELECT EXISTS(
+						SELECT 1 FROM bookings
+						WHERE status='confirmed'
+						AND slot_start < $4
+						AND (slot_start + (duration_minutes || ' minutes')::interval) > $1
+						AND (host_id=$2 OR room_id=$3)
+					)
+				`, t, hostID, roomID, candidateEnd).Scan(&conflict); err != nil {
+					return nil, err
+				}
 			}
 		}
 		if !conflict {
@@ -1119,7 +1147,7 @@ func (r *Repository) ConfirmHold(ctx context.Context, userID, holdID int64, expe
 				AND id <> COALESCE((SELECT id FROM bookings WHERE hold_id=$5), -1)
 				AND slot_start < $4
 				AND (slot_start + (duration_minutes || ' minutes')::interval) > $1
-				AND chair_id=$6
+				AND (host_id=$2 OR chair_id=$6)
 			)
 		`, slotStart, hostID, roomID, slotEnd, holdID, chairID.Int64).Scan(&conflict); err != nil {
 			return 0, err

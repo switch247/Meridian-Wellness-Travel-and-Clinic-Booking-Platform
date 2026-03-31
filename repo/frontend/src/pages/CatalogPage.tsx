@@ -587,6 +587,11 @@ export function CatalogPage() {
           packages={packages}
           hosts={hosts}
           rooms={rooms}
+          fetchChairs={async (roomId) => {
+            if (!token) return [];
+            const out = await api.listRoomChairs(token, roomId);
+            return (out.items || []).map((i) => ({ id: Number(i.id), name: String(i.name || `Chair ${i.id}`) }));
+          }}
           fetchSlots={async (input) => {
             if (!token) return [];
             const out = await api.availableSlots(token, input);
