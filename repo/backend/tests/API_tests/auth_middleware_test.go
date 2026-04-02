@@ -112,6 +112,9 @@ func TestForbiddenOnAdminRouteForTraveler(t *testing.T) {
 }
 
 func TestHTTPIsNotAvailableWhenTLSEnabled(t *testing.T) {
+	if os.Getenv("TLS_ENABLED") != "true" {
+		t.Skip("TLS is disabled, skipping HTTP check")
+	}
 	res, err := http.Get("http://localhost:8443/health")
 	if err == nil && res != nil && res.StatusCode == http.StatusOK {
 		t.Fatalf("expected plain HTTP to not succeed with 200 on TLS port")

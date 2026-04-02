@@ -45,7 +45,7 @@ func Load() Config {
 		ReservationHold:      getEnvDuration("RESERVATION_HOLD", 10*time.Minute),
 		SlotGranularity:      getEnvInt("SLOT_GRANULARITY_MINUTES", 15),
 		AllowedPostalCode:    getEnvCSV("ALLOWED_POSTAL_CODES", []string{"10001", "10002", "10003", "60601", "90001"}),
-		TLSEnabled:           getEnvBool("TLS_ENABLED", true),
+		TLSEnabled:           getEnvBool("TLS_ENABLED", false),
 		TLSCertFile:          resolveCertPath("TLS_CERT_FILE", "../certs/server.crt"),
 		TLSKeyFile:           resolveCertPath("TLS_KEY_FILE", "../certs/server.key"),
 		AllowedIPs:           getEnvCSV("ALLOWED_IPS", []string{"127.0.0.1", "::1", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"}),

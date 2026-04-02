@@ -1,28 +1,16 @@
-
 FROM golang:1.23-alpine AS builder
-WORKDIR /src
+WORKDIR /app/backend
+COPY backend/go.mod backend/go.sum ./
+RUN go mod download
+COPY backend/ ./
+RUN go build -o /meridian-server ./cmd/server
 
-# copy everything to simplify build context and leverage layer caching minimally
-COPY . .
+FROM golang:1.23-alpine
+WORKDIR /app/backend
+RUN apk add --no-cache postgresql-client curl
+COPY --from=builder /meridian-server /app/meridian-server
+COPY backend/ .
+COPY backend/migrations /app/migrations
 
-# ensure modules are downloaded and tidy
-RUN cd backend && go mod download && go mod tidy
-
-# build static binary for the server
-RUN cd backend && CGO_ENABLED=0 GOOS=linux go build -ldflags "-s -w" -o /src/server ./cmd/server
-
-FROM alpine:3.18
-WORKDIR /app
-
-RUN adduser -D appuser
-
-# copy runtime artifacts
-COPY --from=builder /src/server /app/server
-COPY --from=builder /src/backend/migrations /app/migrations
-COPY --from=builder /src/backend/seed /app/seed
-COPY --from=builder /src/backend/docs /app/docs
-COPY --from=builder /src/backend /app/backend
-
-USER appuser
-EXPOSE 8443
-CMD ["/app/server"]
+EXPOSE 8080
+CMD ["/app/meridian-server"]
