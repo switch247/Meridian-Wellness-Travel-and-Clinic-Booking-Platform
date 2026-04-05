@@ -20,6 +20,14 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+var catalogPublishTables = map[string]string{
+	"destinations": "destinations",
+	"packages":     "packages",
+	"routes":       "routes",
+	"hotels":       "hotels",
+	"attractions":  "attractions",
+}
+
 var (
 	ErrNotFound               = errors.New("not found")
 	ErrHoldExpired            = errors.New("hold expired")
@@ -715,6 +723,24 @@ func (r *Repository) GetBookingHost(ctx context.Context, bookingID int64) (int64
 	return hostID, nil
 }
 
+func (r *Repository) GetUserLocationID(ctx context.Context, userID int64) (*int64, error) {
+	var locationID int64
+	err := r.pool.QueryRow(ctx, `
+		SELECT location_id
+		FROM user_locations
+		WHERE user_id=$1
+		ORDER BY location_id ASC
+		LIMIT 1
+	`, userID).Scan(&locationID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &locationID, nil
+}
+
 func (r *Repository) ListUsers(ctx context.Context, roleFilter string) ([]map[string]any, error) {
 	query := `SELECT id, username, created_at FROM users`
 	args := []any{}
@@ -824,6 +850,51 @@ func (r *Repository) ListHostAgenda(ctx context.Context, hostID int64) ([]map[st
 	return items, rows.Err()
 }
 
+func (r *Repository) ListHostAgendaByLocation(ctx context.Context, hostID, locationID int64) ([]map[string]any, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT h.id, h.user_id, h.package_id, h.room_id, h.slot_start, h.duration_minutes, h.status,
+		       b.id, b.session_notes_encrypted
+		FROM reservation_holds h
+		JOIN rooms r ON r.id=h.room_id
+		LEFT JOIN bookings b ON b.hold_id=h.id
+		WHERE h.host_id=$1 AND r.location_id=$2 AND h.status<>'active'
+		ORDER BY h.slot_start DESC
+		LIMIT 200
+	`, hostID, locationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []map[string]any{}
+	for rows.Next() {
+		var id, userID, packageID, roomID, bookingID sql.NullInt64
+		var slotStart time.Time
+		var duration int
+		var status string
+		var rawNotes sql.NullString
+		if err := rows.Scan(&id, &userID, &packageID, &roomID, &slotStart, &duration, &status, &bookingID, &rawNotes); err != nil {
+			return nil, err
+		}
+		item := map[string]any{
+			"id":              id.Int64,
+			"travelerId":      userID.Int64,
+			"packageId":       packageID.Int64,
+			"roomId":          roomID.Int64,
+			"slotStart":       slotStart,
+			"durationMinutes": duration,
+			"status":          status,
+		}
+		if bookingID.Valid {
+			item["bookingId"] = bookingID.Int64
+		}
+		if rawNotes.Valid {
+			item["sessionNotesEncrypted"] = rawNotes.String
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
 func (r *Repository) ListRoomAgenda(ctx context.Context, roomID int64) ([]map[string]any, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT h.id, h.user_id, h.package_id, h.host_id, h.slot_start, h.duration_minutes, h.status,
@@ -834,6 +905,51 @@ func (r *Repository) ListRoomAgenda(ctx context.Context, roomID int64) ([]map[st
 		ORDER BY h.slot_start DESC
 		LIMIT 200
 	`, roomID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []map[string]any{}
+	for rows.Next() {
+		var id, userID, packageID, hostID, bookingID sql.NullInt64
+		var slotStart time.Time
+		var duration int
+		var status string
+		var rawNotes sql.NullString
+		if err := rows.Scan(&id, &userID, &packageID, &hostID, &slotStart, &duration, &status, &bookingID, &rawNotes); err != nil {
+			return nil, err
+		}
+		item := map[string]any{
+			"id":              id.Int64,
+			"travelerId":      userID.Int64,
+			"packageId":       packageID.Int64,
+			"hostId":          hostID.Int64,
+			"slotStart":       slotStart,
+			"durationMinutes": duration,
+			"status":          status,
+		}
+		if bookingID.Valid {
+			item["bookingId"] = bookingID.Int64
+		}
+		if rawNotes.Valid {
+			item["sessionNotesEncrypted"] = rawNotes.String
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (r *Repository) ListRoomAgendaByLocation(ctx context.Context, roomID, locationID int64) ([]map[string]any, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT h.id, h.user_id, h.package_id, h.host_id, h.slot_start, h.duration_minutes, h.status,
+		       b.id, b.session_notes_encrypted
+		FROM reservation_holds h
+		JOIN rooms r ON r.id=h.room_id
+		LEFT JOIN bookings b ON b.hold_id=h.id
+		WHERE h.room_id=$1 AND r.location_id=$2 AND h.status<>'active'
+		ORDER BY h.slot_start DESC
+		LIMIT 200
+	`, roomID, locationID)
 	if err != nil {
 		return nil, err
 	}
@@ -965,6 +1081,22 @@ func (r *Repository) listRichCatalogByTable(ctx context.Context, table string) (
 	return items, rows.Err()
 }
 
+func (r *Repository) SetCatalogPublished(ctx context.Context, entity string, id int64, published bool) error {
+	table, ok := catalogPublishTables[strings.ToLower(strings.TrimSpace(entity))]
+	if !ok {
+		return fmt.Errorf("unsupported catalog entity")
+	}
+	query := fmt.Sprintf(`UPDATE %s SET published=$1 WHERE id=$2`, table)
+	ct, err := r.pool.Exec(ctx, query, published, id)
+	if err != nil {
+		return err
+	}
+	if ct.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 func (r *Repository) ListAvailableSlots(ctx context.Context, hostID, roomID int64, chairID *int64, day time.Time, duration int, granularity int) ([]map[string]any, error) {
 	if err := r.ReleaseExpiredHolds(ctx); err != nil {
 		return nil, err
@@ -1088,14 +1220,15 @@ func (r *Repository) ListAvailableSlots(ctx context.Context, hostID, roomID int6
 	return slots, nil
 }
 
-func (r *Repository) ConfirmHold(ctx context.Context, userID, holdID int64, expectedVersion int) (int64, error) {
+func (r *Repository) ConfirmHold(ctx context.Context, userID, holdID int64, expectedVersion int) (int64, string, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return 0, err
+		return 0, "", err
 	}
 	defer tx.Rollback(ctx)
 
 	var packageID, hostID, roomID int64
+	var packageName string
 	var slotStart time.Time
 	var duration, version int
 	var status string
@@ -1103,38 +1236,47 @@ func (r *Repository) ConfirmHold(ctx context.Context, userID, holdID int64, expe
 	var ownerID int64
 	var chairID sql.NullInt64
 	err = tx.QueryRow(ctx, `
-		SELECT package_id, host_id, room_id, chair_id, slot_start, duration_minutes, version, status, expires_at, user_id
-		FROM reservation_holds WHERE id=$1 FOR UPDATE
-	`, holdID).Scan(&packageID, &hostID, &roomID, &chairID, &slotStart, &duration, &version, &status, &expiresAt, &ownerID)
+		SELECT h.package_id, p.name, h.host_id, h.room_id, h.chair_id, h.slot_start, h.duration_minutes, h.version, h.status, h.expires_at, h.user_id
+		FROM reservation_holds h
+		JOIN packages p ON p.id=h.package_id
+		WHERE h.id=$1 FOR UPDATE
+	`, holdID).Scan(&packageID, &packageName, &hostID, &roomID, &chairID, &slotStart, &duration, &version, &status, &expiresAt, &ownerID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return 0, ErrNotFound
+			return 0, "", ErrNotFound
 		}
-		return 0, err
+		return 0, "", err
+	}
+	packageName = strings.TrimSpace(packageName)
+	if packageName == "" {
+		packageName = "your service"
 	}
 	if ownerID != userID {
-		return 0, fmt.Errorf("not owner")
+		return 0, packageName, fmt.Errorf("not owner")
 	}
 	if status != "active" {
-		return 0, fmt.Errorf("hold not active")
+		return 0, packageName, fmt.Errorf("hold not active")
 	}
-	if expectedVersion > 0 && version != expectedVersion {
-		return 0, fmt.Errorf("version conflict")
+	if expectedVersion <= 0 {
+		return 0, packageName, fmt.Errorf("version required")
+	}
+	if version != expectedVersion {
+		return 0, packageName, fmt.Errorf("version conflict")
 	}
 	// Treat holds that are at-or-before now as expired to avoid confirming
 	// holds whose expiry timestamp is <= server time. Use UTC for comparison.
 	if !expiresAt.After(time.Now().UTC()) {
-		return 0, ErrHoldExpired
+		return 0, packageName, ErrHoldExpired
 	}
 	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, hostID+1_000_000_000); err != nil {
-		return 0, err
+		return 0, packageName, err
 	}
 	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, roomID+2_000_000_000); err != nil {
-		return 0, err
+		return 0, packageName, err
 	}
 	if chairID.Valid {
 		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, chairID.Int64+3_000_000_000); err != nil {
-			return 0, err
+			return 0, packageName, err
 		}
 	}
 	slotEnd := slotStart.Add(time.Duration(duration) * time.Minute)
@@ -1150,7 +1292,7 @@ func (r *Repository) ConfirmHold(ctx context.Context, userID, holdID int64, expe
 				AND (host_id=$2 OR chair_id=$6)
 			)
 		`, slotStart, hostID, roomID, slotEnd, holdID, chairID.Int64).Scan(&conflict); err != nil {
-			return 0, err
+			return 0, packageName, err
 		}
 	} else {
 		if err := tx.QueryRow(ctx, `
@@ -1163,11 +1305,11 @@ func (r *Repository) ConfirmHold(ctx context.Context, userID, holdID int64, expe
 				AND (host_id=$2 OR room_id=$3)
 			)
 		`, slotStart, hostID, roomID, slotEnd, holdID).Scan(&conflict); err != nil {
-			return 0, err
+			return 0, packageName, err
 		}
 	}
 	if conflict {
-		return 0, fmt.Errorf("slot unavailable")
+		return 0, packageName, fmt.Errorf("slot unavailable")
 	}
 
 	var bookingID int64
@@ -1177,7 +1319,7 @@ func (r *Repository) ConfirmHold(ctx context.Context, userID, holdID int64, expe
 			VALUES($1,$2,$3,$4,$5,$6,$7,$8,'scheduled',1)
 			RETURNING id
 		`, holdID, userID, packageID, hostID, roomID, chairID.Int64, slotStart, duration).Scan(&bookingID); err != nil {
-			return 0, err
+			return 0, packageName, err
 		}
 	} else {
 		if err := tx.QueryRow(ctx, `
@@ -1185,35 +1327,47 @@ func (r *Repository) ConfirmHold(ctx context.Context, userID, holdID int64, expe
 			VALUES($1,$2,$3,$4,$5,$6,$7,'scheduled',1)
 			RETURNING id
 		`, holdID, userID, packageID, hostID, roomID, slotStart, duration).Scan(&bookingID); err != nil {
-			return 0, err
+			return 0, packageName, err
 		}
 	}
 
 	if _, err := tx.Exec(ctx, `UPDATE reservation_holds SET status='scheduled', version=version+1 WHERE id=$1`, holdID); err != nil {
-		return 0, err
+		return 0, packageName, err
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return 0, err
+		return 0, packageName, err
 	}
-	return bookingID, nil
+	return bookingID, packageName, nil
 }
 
-func (r *Repository) UpdateBookingStatus(ctx context.Context, bookingID int64, status string, encryptedNotes *string) error {
+func (r *Repository) UpdateBookingStatus(ctx context.Context, bookingID int64, status string, encryptedNotes *string) (int64, string, error) {
 	if !isBookingStatusValid(status) {
-		return ErrInvalidBookingStatus
+		return 0, "", ErrInvalidBookingStatus
 	}
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return err
+		return 0, "", err
 	}
 	defer tx.Rollback(ctx)
 
-	var holdID int64
-	if err := tx.QueryRow(ctx, `SELECT hold_id FROM bookings WHERE id=$1 FOR UPDATE`, bookingID).Scan(&holdID); err != nil {
+	var holdID, travelerID int64
+	var packageName string
+	if err := tx.QueryRow(ctx, `
+		SELECT b.hold_id, h.user_id, p.name
+		FROM bookings b
+		JOIN reservation_holds h ON h.id=b.hold_id
+		JOIN packages p ON p.id=h.package_id
+		WHERE b.id=$1
+		FOR UPDATE
+	`, bookingID).Scan(&holdID, &travelerID, &packageName); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return ErrNotFound
+			return 0, "", ErrNotFound
 		}
-		return err
+		return 0, "", err
+	}
+	packageName = strings.TrimSpace(packageName)
+	if packageName == "" {
+		packageName = "your service"
 	}
 
 	args := []any{status}
@@ -1226,16 +1380,103 @@ func (r *Repository) UpdateBookingStatus(ctx context.Context, bookingID int64, s
 	query += fmt.Sprintf(` WHERE id=$%d`, len(args))
 
 	if _, err := tx.Exec(ctx, query, args...); err != nil {
-		return err
+		return 0, "", err
 	}
 	if _, err := tx.Exec(ctx, `UPDATE reservation_holds SET status=$1, version=version+1 WHERE id=$2`, status, holdID); err != nil {
-		return err
+		return 0, "", err
 	}
-	return tx.Commit(ctx)
+	if err := tx.Commit(ctx); err != nil {
+		return 0, "", err
+	}
+	return travelerID, packageName, nil
+}
+
+func (r *Repository) UpdateBookingStatusByLocation(ctx context.Context, bookingID, locationID int64, status string, encryptedNotes *string) (int64, string, error) {
+	if !isBookingStatusValid(status) {
+		return 0, "", ErrInvalidBookingStatus
+	}
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return 0, "", err
+	}
+	defer tx.Rollback(ctx)
+
+	var holdID, travelerID int64
+	var packageName string
+	if err := tx.QueryRow(ctx, `
+		SELECT b.hold_id, h.user_id, p.name
+		FROM bookings b
+		JOIN rooms room ON room.id=b.room_id
+		JOIN reservation_holds h ON h.id=b.hold_id
+		JOIN packages p ON p.id=h.package_id
+		WHERE b.id=$1 AND room.location_id=$2
+		FOR UPDATE
+	`, bookingID, locationID).Scan(&holdID, &travelerID, &packageName); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return 0, "", ErrNotFound
+		}
+		return 0, "", err
+	}
+	packageName = strings.TrimSpace(packageName)
+	if packageName == "" {
+		packageName = "your service"
+	}
+
+	args := []any{status}
+	query := `UPDATE bookings SET status=$1`
+	if encryptedNotes != nil {
+		args = append(args, *encryptedNotes)
+		query += `, session_notes_encrypted=$2`
+	}
+	args = append(args, bookingID, locationID)
+	idPos := len(args) - 1
+	locPos := len(args)
+	query += fmt.Sprintf(` WHERE id=$%d AND room_id IN (SELECT id FROM rooms WHERE location_id=$%d)`, idPos, locPos)
+
+	if _, err := tx.Exec(ctx, query, args...); err != nil {
+		return 0, "", err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE reservation_holds SET status=$1, version=version+1 WHERE id=$2`, status, holdID); err != nil {
+		return 0, "", err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return 0, "", err
+	}
+	return travelerID, packageName, nil
 }
 
 func (r *Repository) ListCommunityPosts(ctx context.Context) ([]map[string]any, error) {
 	rows, err := r.pool.Query(ctx, `SELECT id, author_user_id, title, body, destination_id, provider_user_id, status, created_at FROM community_posts WHERE status='active' ORDER BY id DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []map[string]any{}
+	for rows.Next() {
+		var id, authorID int64
+		var title, body, status string
+		var destinationID, providerID *int64
+		var createdAt time.Time
+		if err := rows.Scan(&id, &authorID, &title, &body, &destinationID, &providerID, &status, &createdAt); err != nil {
+			return nil, err
+		}
+		items = append(items, map[string]any{"id": id, "authorUserId": authorID, "title": title, "body": body, "destinationId": destinationID, "providerUserId": providerID, "status": status, "createdAt": createdAt})
+	}
+	return items, rows.Err()
+}
+
+func (r *Repository) ListCommunityPostsForUser(ctx context.Context, userID int64) ([]map[string]any, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT p.id, p.author_user_id, p.title, p.body, p.destination_id, p.provider_user_id, p.status, p.created_at
+		FROM community_posts p
+		WHERE p.status='active'
+		AND NOT EXISTS (
+			SELECT 1 FROM user_blocks ub
+			WHERE (ub.blocker_user_id=$1 AND ub.blocked_user_id=p.author_user_id)
+			   OR (ub.blocker_user_id=p.author_user_id AND ub.blocked_user_id=$1)
+		)
+		ORDER BY p.id DESC
+	`, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -1264,13 +1505,18 @@ func (r *Repository) CreateCommunityPost(ctx context.Context, authorID int64, ti
 	return id, err
 }
 
-func (r *Repository) ListCommentsByPost(ctx context.Context, postID int64) ([]map[string]any, error) {
+func (r *Repository) ListCommentsByPost(ctx context.Context, postID, requesterID int64) ([]map[string]any, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT id, post_id, author_user_id, parent_comment_id, body, status, created_at
-		FROM community_comments
+		FROM community_comments c
 		WHERE post_id=$1 AND status='active'
+		AND NOT EXISTS (
+			SELECT 1 FROM user_blocks ub
+			WHERE (ub.blocker_user_id=$2 AND ub.blocked_user_id=c.author_user_id)
+			   OR (ub.blocker_user_id=c.author_user_id AND ub.blocked_user_id=$2)
+		)
 		ORDER BY created_at ASC
-	`, postID)
+	`, postID, requesterID)
 	if err != nil {
 		return nil, err
 	}
@@ -1491,6 +1737,48 @@ func (r *Repository) AnalyticsKPIs(ctx context.Context, from, to time.Time, prov
 		attendance = float64(bookingVolume) / float64(holdCount) * 100
 	}
 
+	availableFilters := []string{"active=TRUE"}
+	availableArgs := []any{}
+	availableIdx := 1
+	if providerID != nil {
+		availableFilters = append(availableFilters, fmt.Sprintf("host_id = $%d", availableIdx))
+		availableArgs = append(availableArgs, *providerID)
+		availableIdx++
+	}
+
+	var availableMinutes int
+	availableQuery := fmt.Sprintf(`
+		SELECT COALESCE(SUM(EXTRACT(EPOCH FROM (end_time - start_time)) / 60), 0)::INT
+		FROM host_availability
+		WHERE %s
+	`, strings.Join(availableFilters, " AND "))
+	if err := r.pool.QueryRow(ctx, availableQuery, availableArgs...).Scan(&availableMinutes); err != nil {
+		return nil, err
+	}
+
+	bookedFilters := []string{"slot_start >= $1", "slot_start < $2", "status IN ('scheduled','completed')"}
+	bookedArgs := []any{from, to}
+	bookedIdx := 3
+	if providerID != nil {
+		bookedFilters = append(bookedFilters, fmt.Sprintf("host_id = $%d", bookedIdx))
+		bookedArgs = append(bookedArgs, *providerID)
+		bookedIdx++
+	}
+	if packageID != nil {
+		bookedFilters = append(bookedFilters, fmt.Sprintf("package_id = $%d", bookedIdx))
+		bookedArgs = append(bookedArgs, *packageID)
+	}
+
+	var bookedMinutes int
+	if err := r.pool.QueryRow(ctx, fmt.Sprintf(`SELECT COALESCE(SUM(duration_minutes), 0) FROM bookings WHERE %s`, strings.Join(bookedFilters, " AND ")), bookedArgs...).Scan(&bookedMinutes); err != nil {
+		return nil, err
+	}
+
+	coachUtilization := 0.0
+	if availableMinutes > 0 {
+		coachUtilization = float64(bookedMinutes) / float64(availableMinutes) * 100
+	}
+
 	// Repurchase rate: percentage of buyers with more than one booking in the period
 	var totalBuyers int
 	if err := r.pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(DISTINCT user_id) FROM bookings WHERE %s AND status IN ('scheduled','confirmed','checked_in','in_progress','completed')`, where), args...).Scan(&totalBuyers); err != nil {
@@ -1524,7 +1812,7 @@ func (r *Repository) AnalyticsKPIs(ctx context.Context, from, to time.Time, prov
 		"attendanceRate":   attendance,
 		"repurchaseRate":   repurchase,
 		"refundRate":       refundRate,
-		"coachUtilization": attendance,
+		"coachUtilization": coachUtilization,
 	}, nil
 }
 
@@ -1701,7 +1989,13 @@ func parseReportJobParams(raw []byte, scheduledFor time.Time) (time.Time, time.T
 func parseReportTime(value any) (time.Time, error) {
 	switch v := value.(type) {
 	case string:
-		return time.Parse(time.RFC3339, v)
+		if parsed, err := time.Parse(time.RFC3339, v); err == nil {
+			return parsed, nil
+		}
+		if parsedDate, err := time.Parse("2006-01-02", v); err == nil {
+			return parsedDate, nil
+		}
+		return time.Time{}, fmt.Errorf("invalid time parameter: %v", value)
 	case time.Time:
 		return v, nil
 	default:

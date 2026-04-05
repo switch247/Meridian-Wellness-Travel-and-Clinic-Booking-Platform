@@ -31,23 +31,24 @@ Offline-first full-stack platform for wellness travel and clinic session operati
 - `/frontend/src/pages`: traveler/coach/ops/admin pages
 - `/tests/unit_tests` and `/tests/API_tests`: executable tests
 - `/docs/openapi.yaml`: API contract
+- `/api/config/coverage`: backend endpoint for allowed coverage regions
   - `/docs/role-matrix.md`: role visibility + endpoint policy
-  - `/docs/security.md`: TLS/IP hardening, encryption key, and logging guidance
+  - `/docs/questions.md`: design Q&A plus doc layout details
 - `/backend/migrations/003_domains_completion.sql`: gap-closure schema
 
-## Startup (Docker Only)
-This project must be run through Docker. Local, non-Docker runs are not supported.
+## Startup (Docker)
+Preferred full-stack runtime is Docker:
 ```bash
 docker-compose up --build
 ```
 
 ## Service URLs
 - Frontend: [http://localhost:5173](http://localhost:5173)
-- Backend health: [https://localhost:8443/health](https://localhost:8443/health)
-- Swagger: [https://localhost:8443/docs](https://localhost:8443/docs)
-- OpenAPI YAML: [https://localhost:8443/docs/openapi.yaml](https://localhost:8443/docs/openapi.yaml)
+- Backend health (default): [http://localhost:8443/health](http://localhost:8443/health)
+- Swagger (default): [http://localhost:8443/docs](http://localhost:8443/docs)
+- OpenAPI YAML (default): [http://localhost:8443/docs/openapi.yaml](http://localhost:8443/docs/openapi.yaml)
 
-Note: backend uses self-signed certs in `backend/certs` for local development. Trust these certs in your browser for clean HTTPS UX.
+Note: backend TLS is toggleable with `TLS_ENABLED`. Default is disabled for local test compatibility. If enabled, backend uses self-signed certs in `backend/certs` for local development.
 
 ## Dev seeded accounts
 
@@ -66,7 +67,7 @@ Common users (quick reference):
 These accounts are for local testing only. Do NOT use these credentials in production and remove or change them before any public deployment.
 
 ## Security Implementation
-- HTTPS-only by default (`TLS_ENABLED=true`) with cert/key fail-fast enforcement
+- TLS is supported and toggleable (`TLS_ENABLED=true|false`), with cert/key fail-fast enforcement when enabled
 - Global IP allowlist via `ALLOWED_IPS` (proxy headers gated by `TRUST_PROXY_HEADERS`)
 - Explicit CORS origins plus HSTS, `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`
 - AES-256 encryption for sensitive data and rotating logs with redaction
@@ -82,20 +83,25 @@ JWT_SECRET=your-jwt-secret
 ENCRYPTION_KEY=0123456789abcdef0123456789abcdef
 ALLOWED_POSTAL_CODES=10001,10002,60601,90001
 CORS_ALLOWED_ORIGINS=https://localhost:5173
-TLS_ENABLED=true
+TLS_ENABLED=false
 ```
 
 The backend `config` loads `AllowedPostalCode` from a compile-time default; supplying `ALLOWED_POSTAL_CODES` lets you test coverage warnings for out-of-service postal codes.
 
 ## Test Execution
-All tests must be run through Docker. Local test runs are not supported.
+Local-first backend verification (no Docker required):
 ```bash
-docker-compose up -d --build
-docker-compose exec backend ./run_tests.sh
+make test-local
 ```
 
-Frontend tests:
-All tests must be run through Docker. Local test runs are not supported.
+This runs `backend` tests directly and is the primary audit path in constrained environments. DB integration tests auto-skip when `DATABASE_URL` is unset.
+
+Docker-backed full environment tests:
+```bash
+./run_tests.sh
+```
+
+Frontend tests (manual):
 ```bash
 docker-compose exec frontend npm run test
 docker-compose exec frontend npm run test:e2e

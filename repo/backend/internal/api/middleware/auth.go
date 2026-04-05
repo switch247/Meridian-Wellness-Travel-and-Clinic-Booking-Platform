@@ -59,6 +59,16 @@ func JWT(cfg AuthConfig) echo.MiddlewareFunc {
 			}
 			c.Set("userID", userID)
 			c.Set("roles", claims["roles"])
+			if rawLocation, exists := claims["locationId"]; exists {
+				switch v := rawLocation.(type) {
+				case float64:
+					c.Set("locationID", int64(v))
+				case string:
+					if n, convErr := strconv.ParseInt(v, 10, 64); convErr == nil {
+						c.Set("locationID", n)
+					}
+				}
+			}
 			return next(c)
 		}
 	}
@@ -66,6 +76,12 @@ func JWT(cfg AuthConfig) echo.MiddlewareFunc {
 
 func UserID(c echo.Context) (int64, bool) {
 	v := c.Get("userID")
+	id, ok := v.(int64)
+	return id, ok
+}
+
+func LocationID(c echo.Context) (int64, bool) {
+	v := c.Get("locationID")
 	id, ok := v.(int64)
 	return id, ok
 }

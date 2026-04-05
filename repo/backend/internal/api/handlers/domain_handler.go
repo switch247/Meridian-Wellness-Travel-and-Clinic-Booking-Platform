@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"strconv"
@@ -11,6 +12,7 @@ import (
 
 	"meridian/backend/internal/api/middleware"
 	"meridian/backend/internal/api/response"
+	"meridian/backend/internal/config"
 	"meridian/backend/internal/repository"
 	"meridian/backend/internal/security"
 	"meridian/backend/internal/service"
@@ -24,6 +26,7 @@ type DomainHandler struct {
 	repo            *repository.Repository
 	encryptor       *security.Encryptor
 	slotGranularity int
+	cfg             config.Config
 }
 
 func optionalInt64(v string) (*int64, error) {
@@ -42,6 +45,7 @@ func NewDomainHandler(
 	booking *service.BookingService,
 	repo *repository.Repository,
 	encryptor *security.Encryptor,
+	cfg config.Config,
 	slotGranularity int,
 ) *DomainHandler {
 	return &DomainHandler{
@@ -50,7 +54,12 @@ func NewDomainHandler(
 		repo:            repo,
 		encryptor:       encryptor,
 		slotGranularity: slotGranularity,
+		cfg:             cfg,
 	}
+}
+
+func (h *DomainHandler) ConfigCoverage(c echo.Context) error {
+	return c.JSON(http.StatusOK, map[string]any{"allowedRegions": h.cfg.AllowedRegions})
 }
 
 type addressRequest struct {
@@ -220,7 +229,7 @@ func (h *DomainHandler) ListHolds(c echo.Context) error {
 			return response.JSONError(c, http.StatusBadRequest, "invalid userId")
 		}
 		// only privileged roles may request other user's holds
-		if !middleware.HasAnyRole(c, "operations", "admin", "coach", "clinician") {
+		if !middleware.HasAnyRole(c, "operations", "admin") {
 			return response.JSONError(c, http.StatusForbidden, "insufficient permission")
 		}
 		items, err := h.repo.ListHoldsByUser(c.Request().Context(), *reqID)
@@ -248,7 +257,7 @@ func (h *DomainHandler) ListBookingHistory(c echo.Context) error {
 		if err != nil || reqID == nil || *reqID <= 0 {
 			return response.JSONError(c, http.StatusBadRequest, "invalid userId")
 		}
-		if !middleware.HasAnyRole(c, "operations", "admin", "coach", "clinician") {
+		if !middleware.HasAnyRole(c, "operations", "admin") {
 			return response.JSONError(c, http.StatusForbidden, "insufficient permission")
 		}
 		items, err := h.repo.ListBookingHistoryByUser(c.Request().Context(), *reqID)
@@ -286,6 +295,10 @@ type serviceRuleRequest struct {
 type blockedPostalRequest struct {
 	ServiceRuleID int64  `json:"serviceRuleId"`
 	PostalCode    string `json:"postalCode"`
+}
+
+type publishRequest struct {
+	Published bool `json:"published"`
 }
 
 func (h *DomainHandler) AssignRole(c echo.Context) error {
@@ -452,6 +465,25 @@ func (h *DomainHandler) AddBlockedPostalCode(c echo.Context) error {
 	return c.JSON(http.StatusCreated, map[string]any{"id": id})
 }
 
+func (h *DomainHandler) SetCatalogPublished(c echo.Context) error {
+	entity := strings.TrimSpace(c.Param("entity"))
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || id <= 0 {
+		return response.JSONError(c, http.StatusBadRequest, "invalid id")
+	}
+	var req publishRequest
+	if err := c.Bind(&req); err != nil {
+		return response.JSONError(c, http.StatusBadRequest, "invalid payload")
+	}
+	if err := h.repo.SetCatalogPublished(c.Request().Context(), entity, id, req.Published); err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			return response.JSONError(c, http.StatusNotFound, "record not found")
+		}
+		return response.JSONError(c, http.StatusBadRequest, err.Error())
+	}
+	return c.JSON(http.StatusOK, map[string]any{"status": "ok", "entity": entity, "id": id, "published": req.Published})
+}
+
 func (h *DomainHandler) HostAgenda(c echo.Context) error {
 	requester, ok := middleware.UserID(c)
 	if !ok {
@@ -464,9 +496,19 @@ func (h *DomainHandler) HostAgenda(c echo.Context) error {
 	if !middleware.HasAnyRole(c, "operations", "admin") && hostID != requester {
 		return response.JSONError(c, http.StatusForbidden, "ownership check failed")
 	}
-	items, err := h.repo.ListHostAgenda(c.Request().Context(), hostID)
-	if err != nil {
-		return response.JSONError(c, http.StatusInternalServerError, err.Error())
+	items := []map[string]any{}
+	var repoErr error
+	if middleware.HasAnyRole(c, "operations", "admin") {
+		items, repoErr = h.repo.ListHostAgenda(c.Request().Context(), hostID)
+	} else {
+		locationID, hasLocation := middleware.LocationID(c)
+		if !hasLocation {
+			return response.JSONError(c, http.StatusForbidden, "location scope missing")
+		}
+		items, repoErr = h.repo.ListHostAgendaByLocation(c.Request().Context(), hostID, locationID)
+	}
+	if repoErr != nil {
+		return response.JSONError(c, http.StatusInternalServerError, repoErr.Error())
 	}
 	h.enrichSessionNotes(items)
 	return c.JSON(http.StatusOK, map[string]any{"items": items})
@@ -477,7 +519,16 @@ func (h *DomainHandler) RoomAgenda(c echo.Context) error {
 	if err != nil {
 		return response.JSONError(c, http.StatusBadRequest, "invalid room id")
 	}
-	items, err := h.repo.ListRoomAgenda(c.Request().Context(), roomID)
+	items := []map[string]any{}
+	if middleware.HasAnyRole(c, "operations", "admin") {
+		items, err = h.repo.ListRoomAgenda(c.Request().Context(), roomID)
+	} else {
+		locationID, hasLocation := middleware.LocationID(c)
+		if !hasLocation {
+			return response.JSONError(c, http.StatusForbidden, "location scope missing")
+		}
+		items, err = h.repo.ListRoomAgendaByLocation(c.Request().Context(), roomID, locationID)
+	}
 	if err != nil {
 		return response.JSONError(c, http.StatusInternalServerError, err.Error())
 	}
@@ -532,7 +583,19 @@ func (h *DomainHandler) UpdateBookingStatus(c echo.Context) error {
 		}
 		encryptedNotes = &payload
 	}
-	if err := h.repo.UpdateBookingStatus(c.Request().Context(), bookingID, trimmedStatus, encryptedNotes); err != nil {
+	var travelerID int64
+	var packageName string
+	var updateErr error
+	if middleware.HasAnyRole(c, "operations", "admin") {
+		travelerID, packageName, updateErr = h.repo.UpdateBookingStatus(c.Request().Context(), bookingID, trimmedStatus, encryptedNotes)
+	} else {
+		locationID, hasLocation := middleware.LocationID(c)
+		if !hasLocation {
+			return response.JSONError(c, http.StatusForbidden, "location scope missing")
+		}
+		travelerID, packageName, updateErr = h.repo.UpdateBookingStatusByLocation(c.Request().Context(), bookingID, locationID, trimmedStatus, encryptedNotes)
+	}
+	if err := updateErr; err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
 			return response.JSONError(c, http.StatusNotFound, "booking not found")
 		}
@@ -541,6 +604,7 @@ func (h *DomainHandler) UpdateBookingStatus(c echo.Context) error {
 		}
 		return response.JSONError(c, http.StatusBadRequest, err.Error())
 	}
+	h.emitBookingStatusNotification(c, travelerID, bookingID, packageName, trimmedStatus)
 	return c.JSON(http.StatusOK, map[string]any{"status": "ok"})
 }
 
@@ -654,8 +718,8 @@ func (h *DomainHandler) AvailableSlots(c echo.Context) error {
 }
 
 type confirmHoldRequest struct {
-	HoldID  int64 `json:"holdId"`
-	Version int   `json:"version"`
+	HoldID  int64 `json:"holdId" validate:"required"`
+	Version int   `json:"version" validate:"required"`
 }
 
 func (h *DomainHandler) ConfirmHold(c echo.Context) error {
@@ -668,11 +732,14 @@ func (h *DomainHandler) ConfirmHold(c echo.Context) error {
 		if r.HoldID <= 0 {
 			return echo.NewHTTPError(http.StatusBadRequest, "holdId required")
 		}
+		if r.Version <= 0 {
+			return echo.NewHTTPError(http.StatusBadRequest, "version required")
+		}
 		return nil
 	}); err != nil {
 		return err
 	}
-	bookingID, err := h.repo.ConfirmHold(c.Request().Context(), uid, req.HoldID, req.Version)
+	bookingID, packageName, err := h.repo.ConfirmHold(c.Request().Context(), uid, req.HoldID, req.Version)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
 			return response.JSONError(c, http.StatusNotFound, "hold not found")
@@ -682,7 +749,23 @@ func (h *DomainHandler) ConfirmHold(c echo.Context) error {
 		}
 		return response.JSONError(c, http.StatusConflict, err.Error())
 	}
+
+	h.emitBookingStatusNotification(c, uid, bookingID, packageName, "confirmed")
 	return c.JSON(http.StatusOK, map[string]any{"bookingId": bookingID, "status": "confirmed"})
+}
+
+func (h *DomainHandler) emitBookingStatusNotification(c echo.Context, travelerID, bookingID int64, packageName, status string) {
+	if travelerID == 0 {
+		return
+	}
+	name := strings.TrimSpace(packageName)
+	if name == "" {
+		name = "your service"
+	}
+	message := fmt.Sprintf("Your booking for %s has been %s.", name, strings.ToLower(status))
+	if err := h.repo.CreateNotification(c.Request().Context(), travelerID, "booking", "Booking status update", message, "booking", &bookingID); err != nil {
+		c.Logger().Error("booking notification failed", "error", err)
+	}
 }
 
 type postRequest struct {
@@ -693,7 +776,11 @@ type postRequest struct {
 }
 
 func (h *DomainHandler) ListPosts(c echo.Context) error {
-	items, err := h.repo.ListCommunityPosts(c.Request().Context())
+	uid, ok := middleware.UserID(c)
+	if !ok {
+		return response.JSONError(c, http.StatusUnauthorized, "missing user context")
+	}
+	items, err := h.repo.ListCommunityPostsForUser(c.Request().Context(), uid)
 	if err != nil {
 		return response.JSONError(c, http.StatusInternalServerError, err.Error())
 	}
@@ -732,7 +819,11 @@ func (h *DomainHandler) ListComments(c echo.Context) error {
 	if err != nil || postID <= 0 {
 		return response.JSONError(c, http.StatusBadRequest, "invalid post id")
 	}
-	items, err := h.repo.ListCommentsByPost(c.Request().Context(), postID)
+	uid, ok := middleware.UserID(c)
+	if !ok {
+		return response.JSONError(c, http.StatusUnauthorized, "missing user context")
+	}
+	items, err := h.repo.ListCommentsByPost(c.Request().Context(), postID, uid)
 	if err != nil {
 		return response.JSONError(c, http.StatusInternalServerError, err.Error())
 	}

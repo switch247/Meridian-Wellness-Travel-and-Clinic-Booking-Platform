@@ -19,6 +19,9 @@ export type LoginResult = { token: string; roles: string[] };
 export type MeResult = { id: number; username: string; roles: string[]; phone: string; address: string };
 
 export const api = {
+  config: {
+    coverage: () => request<{ allowedRegions: string[] }>('/config/coverage'),
+  },
   register: (payload: { username: string; password: string; phone: string; address: string }) =>
     request<{ id: number }>('/auth/register', { method: 'POST', body: JSON.stringify(payload) }),
   login: (payload: { username: string; password: string }) =>
@@ -58,7 +61,7 @@ export const api = {
   listHosts: (token: string) => request<{ items: Array<Record<string, unknown>> }>('/scheduling/hosts', { headers: { Authorization: `Bearer ${token}` } }),
   listRooms: (token: string) => request<{ items: Array<Record<string, unknown>> }>('/scheduling/rooms', { headers: { Authorization: `Bearer ${token}` } }),
   listRoomChairs: (token: string, roomId: number) => request<{ items: Array<Record<string, unknown>> }>(`/scheduling/rooms/${roomId}/chairs`, { headers: { Authorization: `Bearer ${token}` } }),
-  confirmHold: (token: string, payload: { holdId: number; version?: number }) =>
+  confirmHold: (token: string, payload: { holdId: number; version: number }) =>
     request('/bookings/confirm', { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(payload) }),
   updateBookingStatus: (token: string, bookingId: number, payload: { status: string; notes?: string }) =>
     request(`/bookings/${bookingId}/status`, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(payload) }),

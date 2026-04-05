@@ -7,6 +7,7 @@ RUN go build -o /meridian-server ./cmd/server
 
 FROM golang:1.23-alpine
 WORKDIR /app/backend
+ENV PATH="/usr/local/go/bin:${PATH}"
 RUN apk add --no-cache postgresql-client curl
 COPY --from=builder /meridian-server /app/meridian-server
 COPY backend/ .

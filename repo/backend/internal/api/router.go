@@ -35,7 +35,20 @@ func NewRouter(cfg config.Config, logger *slog.Logger, authH *handlers.AuthHandl
 
 	e.HTTPErrorHandler = func(err error, c echo.Context) {
 		logger.Error("request_error", "path", c.Path(), "method", c.Request().Method, "error", err.Error())
-		_ = c.JSON(http.StatusBadRequest, map[string]any{"error": err.Error()})
+		if he, ok := err.(*echo.HTTPError); ok {
+			status := he.Code
+			if status >= http.StatusInternalServerError {
+				_ = c.JSON(status, map[string]any{"error": "internal server error"})
+				return
+			}
+			msg, ok := he.Message.(string)
+			if !ok || msg == "" {
+				msg = http.StatusText(status)
+			}
+			_ = c.JSON(status, map[string]any{"error": msg})
+			return
+		}
+		_ = c.JSON(http.StatusInternalServerError, map[string]any{"error": "internal server error"})
 	}
 
 	e.GET("/health", func(c echo.Context) error {
@@ -54,6 +67,7 @@ func NewRouter(cfg config.Config, logger *slog.Logger, authH *handlers.AuthHandl
 	v1.GET("/catalog/routes", domainH.Routes)
 	v1.GET("/catalog/hotels", domainH.Hotels)
 	v1.GET("/catalog/attractions", domainH.Attractions)
+	v1.GET("/config/coverage", domainH.ConfigCoverage)
 
 	authed := v1.Group("", middleware.JWT(middleware.AuthConfig{JWTSecret: cfg.JWTSecret}))
 	authed.GET("/auth/me", authH.Me, middleware.RequirePermission(middleware.PermAuthMe))
@@ -90,6 +104,7 @@ func NewRouter(cfg config.Config, logger *slog.Logger, authH *handlers.AuthHandl
 	admin.POST("/regions/:id/service-rule", domainH.UpsertServiceRule, middleware.RequirePermission(middleware.PermAdminRegions))
 	admin.GET("/service/blocked-postal-codes", domainH.ListBlockedPostalCodes, middleware.RequirePermission(middleware.PermAdminRegions))
 	admin.POST("/service/blocked-postal-codes", domainH.AddBlockedPostalCode, middleware.RequirePermission(middleware.PermAdminRegions))
+	admin.POST("/catalog/:entity/:id/publish", domainH.SetCatalogPublished, middleware.RequirePermission(middleware.PermAdminRegions))
 
 	community := authed.Group("/community")
 	community.GET("/posts", domainH.ListPosts, middleware.RequirePermission(middleware.PermCommunityRead))

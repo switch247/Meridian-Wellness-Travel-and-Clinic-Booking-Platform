@@ -26,6 +26,9 @@ paths:
   /catalog:
     get:
       responses: { '200': { description: Published packages and pricing calendar } }
+  /config/coverage:
+    get:
+      responses: { '200': { description: Allowed coverage regions list } }
   /catalog/routes:
     get:
       responses: { '200': { description: Published routes } }

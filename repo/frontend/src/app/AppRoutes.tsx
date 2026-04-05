@@ -52,8 +52,11 @@ export function AppRoutes() {
             <Route path="/analytics" element={<AnalyticsPage />} />
           </Route>
 
-          <Route element={<RoleProtectedRoute roles={['admin']} />}>
+          <Route element={<RoleProtectedRoute roles={['operations', 'admin']} />}>
             <Route path="/email-queue" element={<EmailQueuePage />} />
+          </Route>
+
+          <Route element={<RoleProtectedRoute roles={['admin']} />}>
             <Route path="/role-audits" element={<RoleAuditPage />} />
             <Route path="/admin" element={<AdminPage />} />
           </Route>

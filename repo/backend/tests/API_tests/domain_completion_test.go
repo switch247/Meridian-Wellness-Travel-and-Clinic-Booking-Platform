@@ -10,6 +10,125 @@ import (
 	"time"
 )
 
+func pickBookablePackageAndSlot(t *testing.T) (int64, time.Time) {
+	t.Helper()
+	res, body := call(http.MethodGet, "/catalog", "", nil, t)
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 catalog, got %d body=%+v", res.StatusCode, body)
+	}
+	items, ok := body["items"].([]any)
+	if !ok || len(items) == 0 {
+		t.Fatalf("expected non-empty catalog items")
+	}
+	for _, raw := range items {
+		it, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		inv, _ := it["inventoryRemaining"].(float64)
+		if inv <= 0 {
+			continue
+		}
+		idNum, ok := it["id"].(float64)
+		if !ok || idNum <= 0 {
+			continue
+		}
+		serviceDateRaw, ok := it["serviceDate"].(string)
+		if !ok || serviceDateRaw == "" {
+			continue
+		}
+		serviceDate := serviceDateRaw
+		if len(serviceDate) >= 10 {
+			serviceDate = serviceDate[:10]
+		}
+		day, err := time.Parse("2006-01-02", serviceDate)
+		if err != nil {
+			continue
+		}
+		// Keep deterministic slot time; hold placement validates package calendar date.
+		slot := time.Date(day.Year(), day.Month(), day.Day(), 11, 0, 0, 0, time.UTC)
+		return int64(idNum), slot
+	}
+	t.Fatalf("no bookable package found in catalog")
+	return 0, time.Time{}
+}
+
+func pickAvailableSchedulingSlot(t *testing.T, token string, day time.Time, duration int) (int64, int64, time.Time) {
+	t.Helper()
+	dayStr := day.UTC().Format("2006-01-02")
+
+	resHosts, bodyHosts := call(http.MethodGet, "/scheduling/hosts", token, nil, t)
+	if resHosts.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 hosts, got %d body=%+v", resHosts.StatusCode, bodyHosts)
+	}
+	resRooms, bodyRooms := call(http.MethodGet, "/scheduling/rooms", token, nil, t)
+	if resRooms.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 rooms, got %d body=%+v", resRooms.StatusCode, bodyRooms)
+	}
+
+	hosts, ok := bodyHosts["items"].([]any)
+	if !ok || len(hosts) == 0 {
+		t.Fatalf("expected non-empty hosts list")
+	}
+	rooms, ok := bodyRooms["items"].([]any)
+	if !ok || len(rooms) == 0 {
+		t.Fatalf("expected non-empty rooms list")
+	}
+
+	for _, hr := range hosts {
+		h, ok := hr.(map[string]any)
+		if !ok {
+			continue
+		}
+		hostIDf, ok := h["id"].(float64)
+		if !ok || hostIDf <= 0 {
+			continue
+		}
+		hostID := int64(hostIDf)
+
+		for _, rr := range rooms {
+			r, ok := rr.(map[string]any)
+			if !ok {
+				continue
+			}
+			roomIDf, ok := r["id"].(float64)
+			if !ok || roomIDf <= 0 {
+				continue
+			}
+			roomID := int64(roomIDf)
+
+			q := "/scheduling/slots?hostId=" + strconv.FormatInt(hostID, 10) +
+				"&roomId=" + strconv.FormatInt(roomID, 10) +
+				"&day=" + dayStr +
+				"&duration=" + strconv.Itoa(duration)
+			resSlots, bodySlots := call(http.MethodGet, q, token, nil, t)
+			if resSlots.StatusCode != http.StatusOK {
+				continue
+			}
+			slots, ok := bodySlots["items"].([]any)
+			if !ok || len(slots) == 0 {
+				continue
+			}
+			first, ok := slots[0].(map[string]any)
+			if !ok {
+				continue
+			}
+			rawStart, ok := first["slotStart"].(string)
+			if !ok || rawStart == "" {
+				continue
+			}
+			slotStart, err := time.Parse(time.RFC3339, rawStart)
+			if err != nil {
+				continue
+			}
+			return hostID, roomID, slotStart
+		}
+	}
+
+	t.Fatalf("no available scheduling slot found for day=%s duration=%d", dayStr, duration)
+	return 0, 0, time.Time{}
+}
+
 func TestSuccessfulBooking(t *testing.T) {
 	token := makeUserToken(t)
 
@@ -25,9 +144,9 @@ func TestSuccessfulBooking(t *testing.T) {
 		t.Fatalf("address creation failed: %d %+v", res.StatusCode, body)
 	}
 
-	slot := time.Date(2026, 3, 31, 11+int(time.Now().Unix()%10), 0, 0, 0, time.UTC)
+	packageID, slot := pickBookablePackageAndSlot(t)
 	res, body = call(http.MethodPost, "/bookings/holds", token, map[string]any{
-		"packageId": 360,
+		"packageId": packageID,
 		"hostId":    3,
 		"roomId":    1,
 		"slotStart": slot.Format(time.RFC3339),
@@ -63,12 +182,13 @@ func TestBookingConflict(t *testing.T) {
 	if res.StatusCode != http.StatusCreated {
 		t.Fatalf("address creation failed: %d %+v", res.StatusCode, body)
 	}
-	slot := time.Date(2026, 3, 31, 16+int(time.Now().Unix()%10), 0, 0, 0, time.UTC)
+	packageID, slot := pickBookablePackageAndSlot(t)
+	hostID, roomID, slot := pickAvailableSchedulingSlot(t, token, slot, 60)
 
 	res1, _ := call(http.MethodPost, "/bookings/holds", token, map[string]any{
-		"packageId": 361,
-		"hostId":    3,
-		"roomId":    1,
+		"packageId": packageID,
+		"hostId":    hostID,
+		"roomId":    roomID,
 		"slotStart": slot.Format(time.RFC3339),
 		"duration":  60,
 	}, t)
@@ -77,9 +197,9 @@ func TestBookingConflict(t *testing.T) {
 	}
 
 	res2, body2 := call(http.MethodPost, "/bookings/holds", token, map[string]any{
-		"packageId": 361,
-		"hostId":    3,
-		"roomId":    1,
+		"packageId": packageID,
+		"hostId":    hostID,
+		"roomId":    roomID,
 		"slotStart": slot.Add(15 * time.Minute).Format(time.RFC3339),
 		"duration":  45,
 	}, t)
@@ -91,11 +211,28 @@ func TestBookingConflict(t *testing.T) {
 func TestConcurrentBookingConflict(t *testing.T) {
 	tokenA := makeUserToken(t)
 	tokenB := makeUserToken(t)
-	slot := time.Now().UTC().Add(4 * time.Hour).Truncate(time.Minute)
+	packageID, slot := pickBookablePackageAndSlot(t)
+
+	addAddress := func(token string) {
+		res, body := call(http.MethodPost, "/profile/addresses", token, map[string]any{
+			"line1":      "456 Test Ave",
+			"line2":      "",
+			"city":       "Test City",
+			"state":      "TS",
+			"postalCode": "10001",
+		}, t)
+		if res.StatusCode != http.StatusCreated {
+			t.Fatalf("address creation failed: %d %+v", res.StatusCode, body)
+		}
+	}
+	addAddress(tokenA)
+	addAddress(tokenB)
+	hostID, roomID, slot := pickAvailableSchedulingSlot(t, tokenA, slot, 45)
+
 	payload := map[string]any{
-		"packageId": 1,
-		"hostId":    4,
-		"roomId":    2,
+		"packageId": packageID,
+		"hostId":    hostID,
+		"roomId":    roomID,
 		"slotStart": slot.Format(time.RFC3339),
 		"duration":  45,
 	}
@@ -189,7 +326,7 @@ func TestReportNotificationFlow(t *testing.T) {
 	postID := int(bodyPost["id"].(float64))
 
 	// reporter files a report against the post
-	resReport, bodyReport := call(http.MethodPost, "/reports", reporter, map[string]any{"targetType": "post", "targetId": postID, "reason": "spam"}, t)
+	resReport, bodyReport := call(http.MethodPost, "/community/reports", reporter, map[string]any{"targetType": "post", "targetId": postID, "reason": "spam"}, t)
 	if resReport.StatusCode != http.StatusCreated {
 		t.Fatalf("expected 201 report, got %d body=%+v", resReport.StatusCode, bodyReport)
 	}

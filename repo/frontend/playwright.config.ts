@@ -10,7 +10,7 @@ export default defineConfig({
     trace: 'on-first-retry'
   },
   webServer: {
-    command: 'npm run dev',
+    command: 'VITE_API_BASE=http://backend:8443/api/v1 npm run dev',
     url: 'http://localhost:5173',
     reuseExistingServer: true,
     timeout: 120_000

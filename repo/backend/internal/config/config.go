@@ -21,6 +21,7 @@ type Config struct {
 	ReservationHold      time.Duration
 	SlotGranularity      int
 	AllowedPostalCode    []string
+	AllowedRegions       []string
 	TLSEnabled           bool
 	TLSCertFile          string
 	TLSKeyFile           string
@@ -45,6 +46,7 @@ func Load() Config {
 		ReservationHold:      getEnvDuration("RESERVATION_HOLD", 10*time.Minute),
 		SlotGranularity:      getEnvInt("SLOT_GRANULARITY_MINUTES", 15),
 		AllowedPostalCode:    getEnvCSV("ALLOWED_POSTAL_CODES", []string{"10001", "10002", "10003", "60601", "90001"}),
+		AllowedRegions:       getEnvCSV("ALLOWED_REGIONS", []string{"10001", "10002", "10003", "60601", "90001"}),
 		TLSEnabled:           getEnvBool("TLS_ENABLED", false),
 		TLSCertFile:          resolveCertPath("TLS_CERT_FILE", "../certs/server.crt"),
 		TLSKeyFile:           resolveCertPath("TLS_KEY_FILE", "../certs/server.key"),
@@ -176,7 +178,7 @@ func (c Config) ValidateSecurityKeys() error {
 		return fmt.Errorf("security keys must be provided via environment variables")
 	}
 	// reject obvious development defaults
-	if c.JWTSecret == "default-jwt-secret-zzz" {
+	if c.JWTSecret == "default-jwt-secret" || c.JWTSecret == "default-jwt-secret-zzz" {
 		return fmt.Errorf("jwt secret is set to default insecure value; set JWT_SECRET in environment")
 	}
 	if len(c.EncryptionKey) < 32 {

@@ -64,7 +64,7 @@ func main() {
 	bookingSvc := service.NewBookingService(repo, cfg)
 
 	authH := handlers.NewAuthHandler(authSvc)
-	domainH := handlers.NewDomainHandler(profileSvc, bookingSvc, repo, encryptor, cfg.SlotGranularity)
+	domainH := handlers.NewDomainHandler(profileSvc, bookingSvc, repo, encryptor, cfg, cfg.SlotGranularity)
 
 	go func() {
 		ticker := time.NewTicker(cfg.ReportWorkerInterval)

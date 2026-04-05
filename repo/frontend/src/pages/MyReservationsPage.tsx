@@ -91,7 +91,13 @@ export function MyReservationsPage() {
         </MenuItem>
         <MenuItem onClick={async () => {
           if (!token || !selectedRow) return;
-          await api.confirmHold(token, { holdId: Number(selectedRow.id), version: Number(selectedRow._raw?.version ?? 0) });
+          const version = Number(selectedRow._raw?.version ?? 0);
+          if (version <= 0) {
+            window.alert('Unable to confirm: version data is missing. Refresh and try again.');
+            setMenuAnchor(null);
+            return;
+          }
+          await api.confirmHold(token, { holdId: Number(selectedRow.id), version });
           await load();
           setMenuAnchor(null);
         }}>

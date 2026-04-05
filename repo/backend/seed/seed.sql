@@ -74,9 +74,10 @@ SELECT id, 'traveler' FROM users WHERE username='traveler1@example.com' ON CONFL
 INSERT INTO user_roles(user_id, role_name)
 SELECT id, 'traveler' FROM users WHERE username='traveler2@example.com' ON CONFLICT DO NOTHING;
 
-INSERT INTO rooms(name, chairs_count, active)
-SELECT v.name, v.chairs_count, TRUE
+INSERT INTO rooms(name, chairs_count, active, location_id)
+SELECT v.name, v.chairs_count, TRUE, l.id
 FROM (VALUES ('Room A', 2), ('Room B', 1)) AS v(name, chairs_count)
+JOIN locations l ON l.name='Default Location'
 WHERE NOT EXISTS (SELECT 1 FROM rooms r WHERE r.name=v.name);
 
 INSERT INTO host_availability(host_id, weekday, start_time, end_time, room_id, active)

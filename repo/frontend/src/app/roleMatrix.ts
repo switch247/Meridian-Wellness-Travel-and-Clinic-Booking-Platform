@@ -18,7 +18,7 @@ export const navItems: NavItem[] = [
   { label: 'Assigned Sessions', path: '/assigned-sessions', icon: 'sessions', roles: ['coach', 'clinician'] },
   { label: 'Scheduling Ops', path: '/ops-scheduling', icon: 'ops', roles: ['operations', 'admin'] },
   { label: 'Analytics', path: '/analytics', icon: 'analytics', roles: ['operations', 'admin'] },
-  { label: 'Email Queue', path: '/email-queue', icon: 'email', roles: ['admin'] },
+  { label: 'Email Queue', path: '/email-queue', icon: 'email', roles: ['operations', 'admin'] },
   { label: 'Role Audits', path: '/role-audits', icon: 'audits', roles: ['admin'] },
   { label: 'Admin', path: '/admin', icon: 'admin', roles: ['admin'] },
 ];

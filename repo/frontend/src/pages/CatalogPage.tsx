@@ -330,7 +330,7 @@ export function CatalogPage() {
                   </MenuItem>
                   <MenuItem value="available">Available Now</MenuItem>
                   <MenuItem value="limited">Limited Spots</MenuItem>
-                  <MenuItem value="booked">Fully Booked</MenuItem>
+                  <MenuItem value="soldout">Fully Booked</MenuItem>
                 </Select>
               </FormControl>
             </Grid>

@@ -1,6 +1,11 @@
 #!/bin/sh
 set -e
 
+cleanup() {
+	docker compose down 
+}
+trap cleanup EXIT
+
 # Start services
 docker compose up -d --build
 
@@ -8,14 +13,22 @@ docker compose up -d --build
 docker compose exec db pg_isready -U postgres -d meridian
 docker compose exec backend curl -f http://localhost:8443/health || echo "Backend not ready, continuing..."
 
-# Run backend tests
-docker compose exec backend go test ./...
+# Run backend unit and API/integration tests
+docker compose exec -T backend sh -lc '
+if command -v go >/dev/null 2>&1; then
+	RUN_INTEGRATION_TESTS=true BASE_URL=http://localhost:8443 go test ./...
+elif [ -x /usr/local/go/bin/go ]; then
+	RUN_INTEGRATION_TESTS=true BASE_URL=http://localhost:8443 /usr/local/go/bin/go test ./...
+else
+	echo "go not found in backend container (PATH=$PATH)"
+	exit 127
+fi
+'
 
-# Run frontend tests
-docker compose exec frontend npm run test
+# Run frontend unit tests
+docker compose exec -T frontend npm run test
 
-
-# Stop services
-docker compose down
+# run e2e tests
+docker compose exec -T frontend npm run test:e2e
 
 echo "All tests passed successfully!"

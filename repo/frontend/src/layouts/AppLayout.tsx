@@ -115,7 +115,7 @@ export function AppLayout() {
         <Divider sx={{ mt: 'auto' }} />
         <Box sx={{ p: 2 }}>
           <Typography variant="caption" color="text.secondary">
-            TLS + IP allowlist enforced
+            Security headers + IP allowlist enforced
           </Typography>
         </Box>
       </Drawer>

@@ -43,7 +43,7 @@ func TestConfirmHold_ExpiredRejected(t *testing.T) {
 	}
 
 	// Attempt to confirm; expect ErrHoldExpired
-	_, err = repo.ConfirmHold(ctx, uid, holdID, 0)
+	_, _, err = repo.ConfirmHold(ctx, uid, holdID, 1)
 	if err == nil {
 		t.Fatalf("expected error confirming expired hold")
 	}

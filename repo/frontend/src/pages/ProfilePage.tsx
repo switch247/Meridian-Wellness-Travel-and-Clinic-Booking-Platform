@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../api/client';
 import { SectionHeader } from '../components/common/SectionHeader';
 import { useAuth } from '../context/AuthContext';
-import { inCoverage, normalizeAddressInput } from '../utils/address';
+import { inCoverage, normalizeAddressInput, setCoverageRegions } from '../utils/address';
 
 type Contact = { id: number; name: string; relationship: string; phone: string };
 
@@ -53,6 +53,9 @@ export function ProfilePage() {
   }
 
   useEffect(() => {
+    api.config.coverage()
+      .then((res) => setCoverageRegions(res.allowedRegions || []))
+      .catch(() => {});
     loadAddresses().catch(() => {});
     loadContacts().catch(() => {});
   }, [token]);

@@ -44,6 +44,16 @@ func TestLoggerRedactsAuthAttr(t *testing.T) {
 	}
 }
 
+func TestLoggerRedactsNotesAttr(t *testing.T) {
+	var buf bytes.Buffer
+	l := NewWithWriter(&buf)
+	l.Info("payload", "notes", "patient data")
+	out := buf.String()
+	if !contains(out, "[REDACTED]") {
+		t.Fatalf("expected notes to be redacted")
+	}
+}
+
 func contains(s, sub string) bool {
 	return bytes.Contains([]byte(s), []byte(sub))
 }

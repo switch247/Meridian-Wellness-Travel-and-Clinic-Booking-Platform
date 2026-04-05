@@ -98,6 +98,9 @@ func (s *AuthService) Login(ctx context.Context, username, password string) (Log
 		"roles": roles,
 		"exp":   time.Now().Add(s.cfg.TokenTTL).Unix(),
 	})
+	if locationID, locErr := s.repo.GetUserLocationID(ctx, u.ID); locErr == nil && locationID != nil {
+		token.Claims.(jwt.MapClaims)["locationId"] = *locationID
+	}
 	signed, err := token.SignedString([]byte(s.cfg.JWTSecret))
 	if err != nil {
 		s.logger.Error("[auth] login failed: sign token", "user_id", u.ID, "error", err)
