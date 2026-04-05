@@ -57,6 +57,7 @@ For authenticated endpoints, send:
 ### Catalog
 
 - `GET /api/v1/catalog` - Published packages and pricing calendar
+- `GET /api/v1/config/coverage` - Allowed coverage regions list
 - `GET /api/v1/catalog/routes` - Published travel routes
 - `GET /api/v1/catalog/hotels` - Published hotels
 - `GET /api/v1/catalog/attractions` - Published attractions
@@ -152,7 +153,7 @@ Expected conflict responses:
 - operations: cross-user operations views, analytics, scheduling, moderation/admin support
 - admin: full platform governance, role assignment, region/service-rule management
 
-Detailed role/page/endpoint mapping is maintained in `docs/role-matrix.md`.
+Detailed role/page/endpoint mapping is maintained in `repo/docs/role-matrix.md`.
 
 ## Example Requests
 
@@ -194,6 +195,6 @@ Authorization: Bearer <token>
 
 ## Implementation Notes
 
-- The canonical machine-readable contract is `docs/openapi.yaml` (also served at runtime under `/docs/openapi.yaml`).
+- The canonical machine-readable contract is `repo/backend/docs/openapi.yaml` (also served at runtime under `/docs/openapi.yaml`).
 - Some endpoint payload details are intentionally concise in YAML and are expanded in handler/repository logic.
 - Booking status supports: `scheduled`, `confirmed`, `checked_in`, `in_progress`, `completed`, `cancelled`.

@@ -2,7 +2,7 @@
 set -e
 
 cleanup() {
-	docker compose down 
+	docker compose down -v
 }
 trap cleanup EXIT
 

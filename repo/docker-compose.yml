@@ -37,7 +37,7 @@ services:
       TLS_KEY_FILE: /certs/server.key
       ALLOWED_IPS: 127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
       TRUST_PROXY_HEADERS: "false"
-      CORS_ALLOWED_ORIGINS: http://localhost:5173,https://127.0.0.1:5173
+      CORS_ALLOWED_ORIGINS: http://localhost:5173,https://127.0.0.1:5173,http://localhost:4173,https://127.0.0.1:4173
     ports:
       - "8443:8443"
     volumes:

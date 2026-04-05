@@ -53,26 +53,72 @@ func pickBookablePackageAndSlot(t *testing.T) (int64, time.Time) {
 	return 0, time.Time{}
 }
 
-func pickAvailableSchedulingSlot(t *testing.T, token string, day time.Time, duration int) (int64, int64, time.Time) {
+func pickBookablePackageAndAvailableSchedulingSlot(t *testing.T, token string, duration int) (int64, int64, int64, time.Time) {
+	t.Helper()
+	res, body := call(http.MethodGet, "/catalog", "", nil, t)
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 catalog, got %d body=%+v", res.StatusCode, body)
+	}
+	items, ok := body["items"].([]any)
+	if !ok || len(items) == 0 {
+		t.Fatalf("expected non-empty catalog items")
+	}
+
+	for _, raw := range items {
+		it, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		inv, _ := it["inventoryRemaining"].(float64)
+		if inv <= 0 {
+			continue
+		}
+		idNum, ok := it["id"].(float64)
+		if !ok || idNum <= 0 {
+			continue
+		}
+		serviceDateRaw, ok := it["serviceDate"].(string)
+		if !ok || serviceDateRaw == "" {
+			continue
+		}
+		serviceDate := serviceDateRaw
+		if len(serviceDate) >= 10 {
+			serviceDate = serviceDate[:10]
+		}
+		day, err := time.Parse("2006-01-02", serviceDate)
+		if err != nil {
+			continue
+		}
+		hostID, roomID, slotStart, found := findAvailableSchedulingSlot(t, token, day, duration)
+		if found {
+			return int64(idNum), hostID, roomID, slotStart
+		}
+	}
+
+	t.Fatalf("no bookable package with available scheduling slot found for duration=%d", duration)
+	return 0, 0, 0, time.Time{}
+}
+
+func findAvailableSchedulingSlot(t *testing.T, token string, day time.Time, duration int) (int64, int64, time.Time, bool) {
 	t.Helper()
 	dayStr := day.UTC().Format("2006-01-02")
 
 	resHosts, bodyHosts := call(http.MethodGet, "/scheduling/hosts", token, nil, t)
 	if resHosts.StatusCode != http.StatusOK {
-		t.Fatalf("expected 200 hosts, got %d body=%+v", resHosts.StatusCode, bodyHosts)
+		return 0, 0, time.Time{}, false
 	}
 	resRooms, bodyRooms := call(http.MethodGet, "/scheduling/rooms", token, nil, t)
 	if resRooms.StatusCode != http.StatusOK {
-		t.Fatalf("expected 200 rooms, got %d body=%+v", resRooms.StatusCode, bodyRooms)
+		return 0, 0, time.Time{}, false
 	}
 
 	hosts, ok := bodyHosts["items"].([]any)
 	if !ok || len(hosts) == 0 {
-		t.Fatalf("expected non-empty hosts list")
+		return 0, 0, time.Time{}, false
 	}
 	rooms, ok := bodyRooms["items"].([]any)
 	if !ok || len(rooms) == 0 {
-		t.Fatalf("expected non-empty rooms list")
+		return 0, 0, time.Time{}, false
 	}
 
 	for _, hr := range hosts {
@@ -121,11 +167,20 @@ func pickAvailableSchedulingSlot(t *testing.T, token string, day time.Time, dura
 			if err != nil {
 				continue
 			}
-			return hostID, roomID, slotStart
+			return hostID, roomID, slotStart, true
 		}
 	}
 
-	t.Fatalf("no available scheduling slot found for day=%s duration=%d", dayStr, duration)
+	return 0, 0, time.Time{}, false
+}
+
+func pickAvailableSchedulingSlot(t *testing.T, token string, day time.Time, duration int) (int64, int64, time.Time) {
+	t.Helper()
+	hostID, roomID, slotStart, found := findAvailableSchedulingSlot(t, token, day, duration)
+	if found {
+		return hostID, roomID, slotStart
+	}
+	t.Fatalf("no available scheduling slot found for day=%s duration=%d", day.UTC().Format("2006-01-02"), duration)
 	return 0, 0, time.Time{}
 }
 
@@ -182,8 +237,7 @@ func TestBookingConflict(t *testing.T) {
 	if res.StatusCode != http.StatusCreated {
 		t.Fatalf("address creation failed: %d %+v", res.StatusCode, body)
 	}
-	packageID, slot := pickBookablePackageAndSlot(t)
-	hostID, roomID, slot := pickAvailableSchedulingSlot(t, token, slot, 60)
+	packageID, hostID, roomID, slot := pickBookablePackageAndAvailableSchedulingSlot(t, token, 60)
 
 	res1, _ := call(http.MethodPost, "/bookings/holds", token, map[string]any{
 		"packageId": packageID,
@@ -211,7 +265,7 @@ func TestBookingConflict(t *testing.T) {
 func TestConcurrentBookingConflict(t *testing.T) {
 	tokenA := makeUserToken(t)
 	tokenB := makeUserToken(t)
-	packageID, slot := pickBookablePackageAndSlot(t)
+	packageID, hostID, roomID, slot := pickBookablePackageAndAvailableSchedulingSlot(t, tokenA, 45)
 
 	addAddress := func(token string) {
 		res, body := call(http.MethodPost, "/profile/addresses", token, map[string]any{
@@ -227,8 +281,6 @@ func TestConcurrentBookingConflict(t *testing.T) {
 	}
 	addAddress(tokenA)
 	addAddress(tokenB)
-	hostID, roomID, slot := pickAvailableSchedulingSlot(t, tokenA, slot, 45)
-
 	payload := map[string]any{
 		"packageId": packageID,
 		"hostId":    hostID,

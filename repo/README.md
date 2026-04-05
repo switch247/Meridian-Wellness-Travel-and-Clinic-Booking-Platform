@@ -33,7 +33,6 @@ Offline-first full-stack platform for wellness travel and clinic session operati
 - `/docs/openapi.yaml`: API contract
 - `/api/config/coverage`: backend endpoint for allowed coverage regions
   - `/docs/role-matrix.md`: role visibility + endpoint policy
-  - `/docs/questions.md`: design Q&A plus doc layout details
 - `/backend/migrations/003_domains_completion.sql`: gap-closure schema
 
 ## Startup (Docker)

@@ -93,6 +93,18 @@ paths:
   /bookings/confirm:
     post:
       security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                holdId:
+                  type: integer
+                version:
+                  type: integer
+              required: [holdId, version]
       responses: { '200': { description: Hold confirmed into booking }, '409': { description: Version or state conflict } }
   /bookings/{id}/status:
     post:

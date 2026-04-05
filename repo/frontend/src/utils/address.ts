@@ -33,4 +33,3 @@ export function setCoverageRegions(regions: string[]) {
 export function inCoverage(postalCode: string): boolean {
   return coverageSet.has(postalCode.trim());
 }
-}
