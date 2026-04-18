@@ -50,7 +50,7 @@ services:
     build:
       context: ./frontend
     environment:
-      VITE_API_BASE: http://localhost:8443/api/v1
+      VITE_API_BASE: http://backend:8443/api/v1
     ports:
       - "5173:5173"
     depends_on:
