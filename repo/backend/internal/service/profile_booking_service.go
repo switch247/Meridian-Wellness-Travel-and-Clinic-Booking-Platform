@@ -46,7 +46,14 @@ func (s *ProfileService) AddAddress(ctx context.Context, userID int64, line1, li
 	if err := s.repo.CreateAddress(ctx, userID, maskedLine1, maskedLine2, city, state, postal, normalized, coverage, duplicate, encLine1, encLine2); err != nil {
 		return nil, err
 	}
+	// Fetch the last inserted address for this user (most recent by created_at)
+	addresses, err := s.repo.ListAddressesByUser(ctx, userID)
+	if err != nil || len(addresses) == 0 {
+		return nil, err
+	}
+	addr := addresses[0]
 	return map[string]any{
+		"id":         addr["id"],
 		"normalized": normalized,
 		"duplicate":  duplicate,
 		"inCoverage": coverage,
