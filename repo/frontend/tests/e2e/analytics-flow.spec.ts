@@ -3,7 +3,7 @@ import { test, expect } from '@playwright/test';
 test.describe('Analytics Flow', () => {
   test('Admin can access analytics page', async ({ page }) => {
     await page.goto('/');
-    await page.click('text=Login');
+    await page.click('text=Sign In');
     await page.fill('input[name="username"]', 'admin');
     await page.fill('input[name="password"]', 'Password123!');
     await page.click('button[type="submit"]');

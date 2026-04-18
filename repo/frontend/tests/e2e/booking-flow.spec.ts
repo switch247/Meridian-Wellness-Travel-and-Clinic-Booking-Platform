@@ -3,7 +3,7 @@ import { test, expect } from '@playwright/test';
 test.describe('Booking Flow', () => {
   test('User can complete a booking', async ({ page }) => {
     await page.goto('/');
-    await page.click('text=Login');
+    await page.click('text=Sign In');
     await page.fill('input[name="username"]', 'traveler1@example.com');
     await page.fill('input[name="password"]', 'Password123!');
     await page.click('button[type="submit"]');
