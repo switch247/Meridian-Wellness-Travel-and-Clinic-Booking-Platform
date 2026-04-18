@@ -6,7 +6,7 @@ export default defineConfig({
   fullyParallel: false,
   retries: 1,
   use: {
-    baseURL: 'http://localhost:4173',
+    baseURL: 'http://localhost:5173',
     ignoreHTTPSErrors: true,
     trace: 'off',
     launchOptions: {
@@ -14,8 +14,8 @@ export default defineConfig({
     }
   },
   webServer: {
-    command: 'VITE_API_BASE=http://backend:8443/api/v1 vite --host 0.0.0.0 --port 4173',
-    url: 'http://localhost:4173',
+    command: 'vite --host 0.0.0.0 --port 5173',
+    url: 'http://localhost:5173',
     reuseExistingServer: true,
     timeout: 120_000
   },

@@ -4,8 +4,8 @@ test.describe('Admin Flow', () => {
   test('Admin can assign roles and view audits', async ({ page }) => {
     await page.goto('/');
     await page.click('text=Login');
-    await page.fill('input[name="username"]', 'admin1');
-    await page.fill('input[name="password"]', 'adminpass');
+    await page.fill('input[name="username"]', 'admin');
+    await page.fill('input[name="password"]', 'Password123!');
     await page.click('button[type="submit"]');
     await page.click('text=Admin');
     await page.click('text=Assign Role');
