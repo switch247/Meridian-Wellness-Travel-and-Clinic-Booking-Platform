@@ -10,7 +10,7 @@ test('traveler happy path: login, catalog, community, analytics schedule guarded
   await page.getByLabel('Password').fill('Strong#Pass123');
   await page.getByRole('button', { name: 'Quick Register + Sign In' }).click();
 
-  await expect(page.getByText('Operational Dashboard')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Operational Dashboard' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Traveler Snapshot' })).toBeVisible();
 
   await page.getByRole('button', { name: 'My Reservations' }).click();
