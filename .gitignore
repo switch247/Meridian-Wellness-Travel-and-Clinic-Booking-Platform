@@ -36,7 +36,7 @@ Thumbs.db
 # Meta files/folders
 .meta/
 *.meta
-# .tmp/
+.claude/
 # Misc
 *.bak
 *.old
