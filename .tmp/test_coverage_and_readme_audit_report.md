@@ -310,7 +310,7 @@
 ---
 
 **Test Coverage Audit:**  
-Score: 85/100  
+Score: 92/100 (improved)  
 Verdict: Good, with minor gaps.
 
 **README Audit:**  
